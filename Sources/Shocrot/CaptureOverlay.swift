@@ -81,7 +81,14 @@ final class CaptureSession {
     private func show() {
         let mouse = NSEvent.mouseLocation
         for (panel, view) in zip(panels, views) {
+            // The frozen backdrop matches the screen, so only the dimming layer fades in.
+            view.alphaValue = 0
             panel.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.16
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                view.animator().alphaValue = 1
+            }
             if panel.frame.contains(mouse) {
                 panel.makeKey()
                 panel.makeFirstResponder(view)
@@ -129,6 +136,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         case moving(anchor: CGPoint, original: CGRect)
         case resizing(handle: Handle, original: CGRect)
         case drawing
+        case movingAnnotation(index: Int, anchor: CGPoint, original: Annotation, moved: Bool)
     }
 
     private enum Handle: CaseIterable {
@@ -146,8 +154,11 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private(set) var selection: CGRect?
     private var hoverRect: CGRect?
     var mouseLocation: CGPoint?
-    private var annotations: [Annotation] = [] { didSet { syncUndoState() } }
-    private var redoStack: [Annotation] = [] { didSet { syncUndoState() } }
+    private var annotations: [Annotation] = []
+    // Snapshot-based history so moves and deletions are undoable too.
+    private var undoStack: [[Annotation]] = [] { didSet { syncUndoState() } }
+    private var redoStack: [[Annotation]] = [] { didSet { syncUndoState() } }
+    private var selectedAnnotation: Int? { didSet { if oldValue != selectedAnnotation { needsDisplay = true } } }
     private var current: Annotation?
     private var textField: NSTextField?
     private var toolbarHost: NSHostingView<CaptureToolbar>?
@@ -198,7 +209,9 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         hoverRect = nil
         mouseLocation = nil
         annotations.removeAll()
+        undoStack.removeAll()
         redoStack.removeAll()
+        selectedAnnotation = nil
         phase = .idle
         toolbarHost?.removeFromSuperview()
         toolbarHost = nil
@@ -207,8 +220,13 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     private func syncUndoState() {
         guard selection != nil else { return }
-        state.canUndo = !annotations.isEmpty
+        state.canUndo = !undoStack.isEmpty
         state.canRedo = !redoStack.isEmpty
+    }
+
+    private func pushUndo() {
+        undoStack.append(annotations)
+        redoStack.removeAll()
     }
 
     // MARK: - Drawing
@@ -233,16 +251,28 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             annotations.forEach { renderer.draw($0, in: ctx) }
             if let current { renderer.draw(current, in: ctx) }
             ctx.restoreGState()
+            if let i = selectedAnnotation, annotations.indices.contains(i) {
+                let r = frame(of: annotations[i]).insetBy(dx: -5, dy: -5)
+                ctx.saveGState()
+                ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.9).cgColor)
+                ctx.setLineWidth(1)
+                ctx.setLineDash(phase: 0, lengths: [4, 3])
+                ctx.setShadow(offset: .zero, blur: 2, color: NSColor.black.withAlphaComponent(0.6).cgColor)
+                ctx.addPath(CGPath(roundedRect: r, cornerWidth: 4, cornerHeight: 4, transform: nil))
+                ctx.strokePath()
+                ctx.restoreGState()
+            }
             drawSelectionChrome(selection, in: ctx)
         } else if let hoverRect {
+            ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.06).cgColor)
+            ctx.fill(hoverRect)
             ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
             ctx.setLineWidth(2)
             ctx.stroke(hoverRect.insetBy(dx: 1, dy: 1))
         }
 
-        if showsMagnifier, let p = mouseLocation {
-            drawMagnifier(at: p, in: ctx)
-        }
+        if showsGuides, let p = mouseLocation { drawGuides(at: p, in: ctx) }
+        if showsMagnifier, let p = mouseLocation { drawMagnifier(at: p, in: ctx) }
     }
 
     private var showsMagnifier: Bool {
@@ -255,55 +285,86 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         }
     }
 
+    private var showsGuides: Bool {
+        if case .idle = phase { return selection == nil }
+        if case let .creating(_, dragged) = phase { return !dragged }
+        return false
+    }
+
+    /// Full-screen hairlines through the cursor for precise alignment.
+    private func drawGuides(at p: CGPoint, in ctx: CGContext) {
+        let x = (p.x * scale).rounded(.down) / scale + 0.5 / scale
+        let y = (p.y * scale).rounded(.down) / scale + 0.5 / scale
+        ctx.saveGState()
+        ctx.setLineWidth(1 / scale)
+        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.45).cgColor)
+        ctx.setShadow(offset: .zero, blur: 1, color: NSColor.black.withAlphaComponent(0.35).cgColor)
+        ctx.strokeLineSegments(between: [CGPoint(x: bounds.minX, y: y), CGPoint(x: bounds.maxX, y: y),
+                                         CGPoint(x: x, y: bounds.minY), CGPoint(x: x, y: bounds.maxY)])
+        ctx.restoreGState()
+    }
+
     private func drawSelectionChrome(_ r: CGRect, in ctx: CGContext) {
+        // Crisp hairline frame with a faint dark halo so it reads on light and dark content.
+        ctx.saveGState()
+        ctx.setStrokeColor(NSColor.black.withAlphaComponent(0.25).cgColor)
+        ctx.setLineWidth(3)
+        ctx.stroke(r.insetBy(dx: -1.5, dy: -1.5))
         ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
-        ctx.setLineWidth(1.5)
-        ctx.stroke(r.insetBy(dx: -0.75, dy: -0.75))
+        ctx.setLineWidth(1)
+        ctx.stroke(r.insetBy(dx: -0.5, dy: -0.5))
+        ctx.restoreGState()
 
         if case .creating = phase {} else if state.tool == nil || toolbarHost == nil {
             for h in Handle.allCases {
                 let c = handleCenter(h, in: r)
-                let dot = CGRect(x: c.x - 4.5, y: c.y - 4.5, width: 9, height: 9)
+                let dot = CGRect(x: c.x - 4, y: c.y - 4, width: 8, height: 8)
+                ctx.saveGState()
+                ctx.setShadow(offset: CGSize(width: 0, height: -0.5), blur: 2.5, color: NSColor.black.withAlphaComponent(0.45).cgColor)
                 ctx.setFillColor(NSColor.white.cgColor)
-                ctx.setShadow(offset: .zero, blur: 2, color: NSColor.black.withAlphaComponent(0.4).cgColor)
                 ctx.fillEllipse(in: dot)
-                ctx.setShadow(offset: .zero, blur: 0, color: nil)
+                ctx.restoreGState()
                 ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
-                ctx.setLineWidth(1.5)
-                ctx.strokeEllipse(in: dot.insetBy(dx: 0.75, dy: 0.75))
+                ctx.setLineWidth(1.25)
+                ctx.strokeEllipse(in: dot.insetBy(dx: 0.6, dy: 0.6))
             }
         }
 
         // Size badge (in pixels).
         let text = "\(Int(round(r.width * scale))) × \(Int(round(r.height * scale)))"
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
+            .font: NSFont.roundedMonospaced(size: 11, weight: .semibold),
             .foregroundColor: NSColor.white,
         ]
         let size = (text as NSString).size(withAttributes: attrs)
-        var badge = CGRect(x: r.minX, y: r.maxY + 6, width: size.width + 12, height: size.height + 6)
-        if badge.maxY > bounds.maxY { badge.origin.y = r.maxY - badge.height - 6; badge.origin.x += 6 }
-        badge.origin.x = min(badge.origin.x, bounds.maxX - badge.width - 4)
-        ctx.setFillColor(NSColor.black.withAlphaComponent(0.72).cgColor)
-        ctx.addPath(CGPath(roundedRect: badge, cornerWidth: 5, cornerHeight: 5, transform: nil))
+        var badge = CGRect(x: r.minX, y: r.maxY + 8, width: ceil(size.width) + 14, height: 20)
+        if badge.maxY > bounds.maxY - 2 { badge.origin = CGPoint(x: r.minX + 8, y: r.maxY - badge.height - 8) }
+        badge.origin.x = min(max(badge.origin.x, 4), bounds.maxX - badge.width - 4)
+        ctx.saveGState()
+        ctx.setShadow(offset: CGSize(width: 0, height: -1), blur: 4, color: NSColor.black.withAlphaComponent(0.3).cgColor)
+        ctx.setFillColor(NSColor(white: 0.08, alpha: 0.82).cgColor)
+        ctx.addPath(CGPath(roundedRect: badge, cornerWidth: 10, cornerHeight: 10, transform: nil))
         ctx.fillPath()
-        (text as NSString).draw(at: CGPoint(x: badge.minX + 6, y: badge.minY + 3), withAttributes: attrs)
+        ctx.restoreGState()
+        (text as NSString).draw(at: CGPoint(x: badge.minX + 7, y: badge.midY - size.height / 2), withAttributes: attrs)
     }
 
     private func drawMagnifier(at p: CGPoint, in ctx: CGContext) {
-        let cells = 15, zoom: CGFloat = 8
+        let cells = 17, zoom: CGFloat = 7
         let side = CGFloat(cells) * zoom
-        let infoHeight: CGFloat = 44
-        var origin = CGPoint(x: p.x + 22, y: p.y - 22 - side - infoHeight)
-        if origin.x + side > bounds.maxX { origin.x = p.x - 22 - side }
-        if origin.y < bounds.minY { origin.y = p.y + 22 }
-        let lens = CGRect(x: origin.x, y: origin.y + infoHeight, width: side, height: side)
+        let infoHeight: CGFloat = 50
+        let radius: CGFloat = 12
+        var origin = CGPoint(x: p.x + 24, y: p.y - 24 - side - infoHeight)
+        if origin.x + side > bounds.maxX - 4 { origin.x = p.x - 24 - side }
+        if origin.y < bounds.minY + 4 { origin.y = p.y + 24 }
         let panel = CGRect(x: origin.x, y: origin.y, width: side, height: side + infoHeight)
+        let lens = CGRect(x: origin.x, y: origin.y + infoHeight, width: side, height: side)
 
+        // Card
         ctx.saveGState()
-        ctx.setShadow(offset: CGSize(width: 0, height: -2), blur: 8, color: NSColor.black.withAlphaComponent(0.4).cgColor)
-        ctx.setFillColor(NSColor(white: 0.1, alpha: 0.9).cgColor)
-        ctx.addPath(CGPath(roundedRect: panel, cornerWidth: 8, cornerHeight: 8, transform: nil))
+        ctx.setShadow(offset: CGSize(width: 0, height: -4), blur: 14, color: NSColor.black.withAlphaComponent(0.45).cgColor)
+        ctx.setFillColor(NSColor(white: 0.09, alpha: 0.94).cgColor)
+        ctx.addPath(CGPath(roundedRect: panel, cornerWidth: radius, cornerHeight: radius, transform: nil))
         ctx.fillPath()
         ctx.restoreGState()
 
@@ -312,50 +373,80 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         let half = cells / 2
         let src = CGRect(x: px - half, y: py - half, width: cells, height: cells)
         ctx.saveGState()
-        ctx.addPath(CGPath(roundedRect: lens, cornerWidth: 8, cornerHeight: 8, transform: nil))
+        let lensPath = CGMutablePath()
+        lensPath.addRoundedRect(in: lens, cornerWidth: radius, cornerHeight: radius)
+        ctx.addPath(lensPath)
+        ctx.addRect(CGRect(x: lens.minX, y: lens.minY, width: lens.width, height: radius)) // square bottom corners
         ctx.clip()
         ctx.setFillColor(NSColor.black.cgColor)
         ctx.fill(lens)
         let clipped = src.intersection(CGRect(x: 0, y: 0, width: snapshot.image.width, height: snapshot.image.height))
         if !clipped.isNull, let crop = snapshot.image.cropping(to: clipped) {
             ctx.interpolationQuality = .none
-            let dest = CGRect(x: lens.minX + (clipped.minX - src.minX) * zoom,
-                              y: lens.maxY - (clipped.maxY - src.minY) * zoom,
-                              width: clipped.width * zoom, height: clipped.height * zoom)
-            ctx.draw(crop, in: dest)
+            ctx.draw(crop, in: CGRect(x: lens.minX + (clipped.minX - src.minX) * zoom,
+                                      y: lens.maxY - (clipped.maxY - src.minY) * zoom,
+                                      width: clipped.width * zoom, height: clipped.height * zoom))
         }
-        // Crosshair
-        ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.35).cgColor)
+        // Pixel grid
+        ctx.setStrokeColor(NSColor.black.withAlphaComponent(0.14).cgColor)
+        ctx.setLineWidth(0.5)
+        for i in 1..<cells {
+            let o = CGFloat(i) * zoom
+            ctx.strokeLineSegments(between: [CGPoint(x: lens.minX + o, y: lens.minY), CGPoint(x: lens.minX + o, y: lens.maxY),
+                                             CGPoint(x: lens.minX, y: lens.minY + o), CGPoint(x: lens.maxX, y: lens.minY + o)])
+        }
+        // Crosshair band + center pixel
         let mid = CGFloat(half) * zoom
-        ctx.fill(CGRect(x: lens.minX, y: lens.minY + mid, width: side, height: zoom))
-        ctx.fill(CGRect(x: lens.minX + mid, y: lens.minY, width: zoom, height: side))
-        ctx.setStrokeColor(NSColor.white.cgColor)
+        ctx.setFillColor(NSColor.controlAccentColor.withAlphaComponent(0.22).cgColor)
+        ctx.fill(CGRect(x: lens.minX, y: lens.minY + mid, width: mid, height: zoom))
+        ctx.fill(CGRect(x: lens.minX + mid + zoom, y: lens.minY + mid, width: mid, height: zoom))
+        ctx.fill(CGRect(x: lens.minX + mid, y: lens.minY, width: zoom, height: mid))
+        ctx.fill(CGRect(x: lens.minX + mid, y: lens.minY + mid + zoom, width: zoom, height: mid))
+        let center = CGRect(x: lens.minX + mid, y: lens.minY + mid, width: zoom, height: zoom)
         ctx.setLineWidth(1)
-        ctx.stroke(CGRect(x: lens.minX + mid, y: lens.minY + mid, width: zoom, height: zoom))
+        ctx.setStrokeColor(NSColor.black.withAlphaComponent(0.6).cgColor)
+        ctx.stroke(center.insetBy(dx: -1, dy: -1))
+        ctx.setStrokeColor(NSColor.white.cgColor)
+        ctx.stroke(center)
         ctx.restoreGState()
 
-        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.25).cgColor)
+        // Hairline border + divider
+        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.16).cgColor)
         ctx.setLineWidth(1)
-        ctx.addPath(CGPath(roundedRect: panel.insetBy(dx: 0.5, dy: 0.5), cornerWidth: 8, cornerHeight: 8, transform: nil))
+        ctx.addPath(CGPath(roundedRect: panel.insetBy(dx: 0.5, dy: 0.5), cornerWidth: radius, cornerHeight: radius, transform: nil))
         ctx.strokePath()
+        ctx.strokeLineSegments(between: [CGPoint(x: lens.minX, y: lens.minY), CGPoint(x: lens.maxX, y: lens.minY)])
 
+        // Info: color + position/size
         let color = pixelColor(at: p)
-        let small: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .regular),
-            .foregroundColor: NSColor.white.withAlphaComponent(0.85),
+        let primary: [NSAttributedString.Key: Any] = [
+            .font: NSFont.roundedMonospaced(size: 11, weight: .semibold), .foregroundColor: NSColor.white,
         ]
-        let swatch = CGRect(x: panel.minX + 8, y: panel.minY + 8, width: 11, height: 11)
+        let secondary: [NSAttributedString.Key: Any] = [
+            .font: NSFont.roundedMonospaced(size: 10, weight: .medium), .foregroundColor: NSColor.white.withAlphaComponent(0.55),
+        ]
+        let swatch = CGRect(x: panel.minX + 10, y: panel.minY + 28, width: 12, height: 12)
         ctx.setFillColor((color ?? .black).cgColor)
-        ctx.fill(swatch)
-        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.6).cgColor)
-        ctx.stroke(swatch)
-        ("\(color?.hexString ?? "-")  按 C 复制" as NSString)
-            .draw(at: CGPoint(x: swatch.maxX + 6, y: panel.minY + 6), withAttributes: small)
+        ctx.addPath(CGPath(roundedRect: swatch, cornerWidth: 3, cornerHeight: 3, transform: nil))
+        ctx.fillPath()
+        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.5).cgColor)
+        ctx.addPath(CGPath(roundedRect: swatch.insetBy(dx: 0.5, dy: 0.5), cornerWidth: 3, cornerHeight: 3, transform: nil))
+        ctx.strokePath()
+        ((color?.hexString ?? "—") as NSString).draw(at: CGPoint(x: swatch.maxX + 6, y: swatch.minY - 1), withAttributes: primary)
+        // "C" keycap hint: press C to copy the color.
+        let cap = CGRect(x: panel.maxX - 26, y: swatch.minY - 1, width: 16, height: 14)
+        ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.35).cgColor)
+        ctx.setLineWidth(1)
+        ctx.addPath(CGPath(roundedRect: cap.insetBy(dx: 0.5, dy: 0.5), cornerWidth: 3.5, cornerHeight: 3.5, transform: nil))
+        ctx.strokePath()
+        let c = "C" as NSString
+        let cs = c.size(withAttributes: secondary)
+        c.draw(at: CGPoint(x: cap.midX - cs.width / 2, y: cap.midY - cs.height / 2), withAttributes: secondary)
         var info = "\(Int(p.x)), \(Int(bounds.height - p.y))"
         if let s = selection ?? (phaseIsCreating ? nil : hoverRect) {
             info = "\(Int(round(s.width * scale))) × \(Int(round(s.height * scale)))"
         }
-        (info as NSString).draw(at: CGPoint(x: panel.minX + 8, y: panel.minY + 24), withAttributes: small)
+        (info as NSString).draw(at: CGPoint(x: panel.minX + 10, y: panel.minY + 9), withAttributes: secondary)
     }
 
     private var phaseIsCreating: Bool {
@@ -431,6 +522,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             case .top, .bottom: NSCursor.resizeUpDown.set()
             default: NSCursor.crosshair.set()
             }
+        } else if selection.contains(p), annotationIndex(at: p) != nil {
+            NSCursor.openHand.set()
         } else if selection.contains(p) {
             switch state.tool {
             case .none: NSCursor.openHand.set()
@@ -459,6 +552,13 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             return
         }
         if selection.contains(p) {
+            if !hadText, let i = annotationIndex(at: p) {
+                selectedAnnotation = i
+                phase = .movingAnnotation(index: i, anchor: p, original: annotations[i], moved: false)
+                NSCursor.closedHand.set()
+                return
+            }
+            selectedAnnotation = nil
             if let tool = state.tool {
                 if hadText && tool == .text { return } // click just ends the edit
                 beginAnnotation(tool, at: p)
@@ -520,6 +620,14 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             if r.width >= 2, r.height >= 2 { selection = r }
         case .drawing:
             updateAnnotation(to: p, constrained: event.modifierFlags.contains(.shift))
+        case let .movingAnnotation(i, anchor, original, moved):
+            guard annotations.indices.contains(i) else { break }
+            if !moved {
+                pushUndo()
+                phase = .movingAnnotation(index: i, anchor: anchor, original: original, moved: true)
+            }
+            let dx = p.x - anchor.x, dy = p.y - anchor.y
+            annotations[i].points = original.points.map { CGPoint(x: $0.x + dx, y: $0.y + dy) }
         }
         needsDisplay = true
     }
@@ -545,11 +653,13 @@ final class OverlayView: NSView, NSTextFieldDelegate {
                     a.points.append(CGPoint(x: a.points[0].x + 0.1, y: a.points[0].y)) // a dot
                 }
                 if meaningful || a.tool == .pen || a.tool == .highlighter {
+                    pushUndo()
                     annotations.append(a)
-                    redoStack.removeAll()
                 }
             }
             current = nil
+        case .movingAnnotation:
+            phase = .idle
         case .idle:
             break
         }
@@ -593,8 +703,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             beginText(at: p)
         case .counter:
             let n = annotations.filter { $0.tool == .counter }.count + 1
+            pushUndo()
             annotations.append(Annotation(tool: .counter, points: [p], color: state.color, width: state.width, number: n))
-            redoStack.removeAll()
             needsDisplay = true
         default:
             let color = tool == .highlighter && state.color == OverlayState.palette[0] ? OverlayState.palette[2] : state.color
@@ -673,9 +783,9 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         field.removeFromSuperview()
         guard !text.isEmpty else { return }
         let origin = CGPoint(x: field.frame.minX + 2, y: field.frame.maxY - 2)
+        pushUndo()
         annotations.append(Annotation(tool: .text, points: [origin], color: field.textColor ?? state.color,
                                       width: state.width, text: text))
-        redoStack.removeAll()
         window?.makeFirstResponder(self)
         needsDisplay = true
     }
@@ -687,7 +797,10 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
 
         switch event.keyCode {
-        case 53: session?.cancel(); return // Esc
+        case 53: // Esc: deselect first, then cancel
+            if selectedAnnotation != nil { selectedAnnotation = nil } else { session?.cancel() }
+            return
+        case 51, 117: deleteSelectedAnnotation(); return // Delete
         case 36, 76: if selection != nil { finish(.copy) }; return // Return / Enter
         case 123, 124, 125, 126:
             nudge(keyCode: event.keyCode, by: flags.contains(.shift) ? 10 : 1)
@@ -752,15 +865,77 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     }
 
     private func undo() {
-        guard let last = annotations.popLast() else { return }
-        redoStack.append(last)
+        guard let previous = undoStack.popLast() else { return }
+        redoStack.append(annotations)
+        annotations = previous
+        selectedAnnotation = nil
         needsDisplay = true
     }
 
     private func redo() {
-        guard let a = redoStack.popLast() else { return }
-        annotations.append(a)
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(annotations)
+        annotations = next
+        selectedAnnotation = nil
         needsDisplay = true
+    }
+
+    private func deleteSelectedAnnotation() {
+        guard let i = selectedAnnotation, annotations.indices.contains(i) else { return }
+        pushUndo()
+        annotations.remove(at: i)
+        selectedAnnotation = nil
+        needsDisplay = true
+    }
+
+    // MARK: - Annotation hit testing
+
+    private func frame(of a: Annotation) -> CGRect {
+        switch a.tool {
+        case .text:
+            guard let p = a.points.first else { return .zero }
+            let size = NSAttributedString(string: a.text, attributes: Annotation.textAttributes(color: a.color, width: a.width)).size()
+            return CGRect(x: p.x, y: p.y - size.height, width: size.width, height: size.height)
+        case .counter:
+            guard let p = a.points.first else { return .zero }
+            let d = 14 + a.width * 4
+            return CGRect(x: p.x - d / 2, y: p.y - d / 2, width: d, height: d)
+        default:
+            let pad = a.tool == .highlighter ? a.width * 2.5 : a.width / 2
+            return a.boundingRect.insetBy(dx: -pad, dy: -pad)
+        }
+    }
+
+    private func annotationIndex(at p: CGPoint) -> Int? {
+        annotations.indices.reversed().first { hits(annotations[$0], p) }
+    }
+
+    private func hits(_ a: Annotation, _ p: CGPoint) -> Bool {
+        let tol = max(6, a.width + 3)
+        switch a.tool {
+        case .text, .counter, .mosaic:
+            return frame(of: a).insetBy(dx: -3, dy: -3).contains(p)
+        case .rect:
+            let r = a.boundingRect
+            return r.insetBy(dx: -tol, dy: -tol).contains(p) && !r.insetBy(dx: tol, dy: tol).contains(p)
+        case .ellipse:
+            let r = a.boundingRect
+            guard r.width > 1, r.height > 1 else { return false }
+            let rx = r.width / 2, ry = r.height / 2
+            let v = hypot((p.x - r.midX) / rx, (p.y - r.midY) / ry)
+            return abs(v - 1) * min(rx, ry) < tol
+        case .arrow, .pen, .highlighter:
+            let t = a.tool == .highlighter ? a.width * 2.5 + 3 : tol
+            return zip(a.points, a.points.dropFirst()).contains { distance(p, $0, $1) < t }
+        }
+    }
+
+    private func distance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let len2 = dx * dx + dy * dy
+        guard len2 > 0 else { return hypot(p.x - a.x, p.y - a.y) }
+        let t = max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
+        return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
     }
 
     private func finish(_ outcome: CaptureOutcome) {
@@ -778,9 +953,22 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             })
             addSubview(host)
             toolbarHost = host
+            syncUndoState()
+            layoutToolbar()
+            // Rise-and-fade entrance.
+            host.alphaValue = 0
+            let final = host.frame
+            host.setFrameOrigin(CGPoint(x: final.minX, y: final.minY - 6))
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.18
+                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+                host.animator().alphaValue = 1
+                host.animator().setFrameOrigin(final.origin)
+            }
+        } else {
+            syncUndoState()
+            layoutToolbar()
         }
-        syncUndoState()
-        layoutToolbar()
         needsDisplay = true
     }
 

@@ -171,7 +171,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                 HistoryStore.shared.add(snap.image, scale: scale)
                 ImageOutput.copy(snap.image, scale: scale)
                 let url = try ImageOutput.save(result.image)
-                Feedback.toast("全屏截图已复制并保存为 \(url.lastPathComponent)")
+                CapturePreview.show(image: result.image, scale: scale, status: "已复制并保存", savedURL: url, on: snap.screen)
             } catch {
                 Feedback.error(error)
             }
@@ -181,14 +181,15 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     private func handle(_ outcome: CaptureOutcome, result: CaptureResult) {
         if outcome != .ocr { Feedback.shutter() }
         let historyID = HistoryStore.shared.add(result.image, scale: result.scale)
+        let screen = NSScreen.screens.first { $0.frame.contains(CGPoint(x: result.globalRect.midX, y: result.globalRect.midY)) }
         switch outcome {
         case .copy:
             ImageOutput.copy(result.image, scale: result.scale)
-            Feedback.toast("已复制到剪贴板")
+            CapturePreview.show(image: result.image, scale: result.scale, status: "已复制", savedURL: nil, on: screen)
         case .save:
             do {
                 let url = try ImageOutput.save(result.image)
-                Feedback.toast("已保存为 \(url.lastPathComponent)")
+                CapturePreview.show(image: result.image, scale: result.scale, status: "已保存", savedURL: url, on: screen)
             } catch {
                 Feedback.error(error)
             }

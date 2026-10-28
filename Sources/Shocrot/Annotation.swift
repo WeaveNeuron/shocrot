@@ -191,6 +191,15 @@ struct AnnotationRenderer {
     }
 }
 
+extension NSFont {
+    /// SF Pro Rounded with tabular digits, used for measurements and labels.
+    static func roundedMonospaced(size: CGFloat, weight: NSFont.Weight) -> NSFont {
+        let base = NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
+        guard let descriptor = base.fontDescriptor.withDesign(.rounded) else { return base }
+        return NSFont(descriptor: descriptor, size: size) ?? base
+    }
+}
+
 extension NSColor {
     var isLight: Bool {
         guard let c = usingColorSpace(.sRGB) else { return false }

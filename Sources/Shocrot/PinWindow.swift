@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// A floating, always-on-top image ("贴图"). Drag to move, scroll/pinch to zoom, double-click or Esc to close.
 final class PinWindow: NSPanel {
@@ -10,6 +11,7 @@ final class PinWindow: NSPanel {
     private var zoom: CGFloat = 1
     private let zoomLabel = NSTextField(labelWithString: "")
     private var labelWork: DispatchWorkItem?
+    private var actionBar: NSHostingView<PinActionBar>?
 
     static func pin(_ image: CGImage, scale: CGFloat, at rect: CGRect? = nil) {
         let pin = PinWindow(image: image, scale: scale, rect: rect)
@@ -41,26 +43,57 @@ final class PinWindow: NSPanel {
 
         let content = PinContentView(frame: CGRect(origin: .zero, size: frame.size))
         content.wantsLayer = true
-        content.layer?.cornerRadius = 4
+        content.layer?.cornerRadius = 6
+        content.layer?.cornerCurve = .continuous
         content.layer?.masksToBounds = true
         content.layer?.borderWidth = 1
-        content.layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.6).cgColor
         content.owner = self
 
         content.layer?.contents = image
         content.layer?.contentsGravity = .resize
 
-        zoomLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+        zoomLabel.font = .roundedMonospaced(size: 11, weight: .semibold)
         zoomLabel.textColor = .white
         zoomLabel.alignment = .center
         zoomLabel.wantsLayer = true
-        zoomLabel.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.6).cgColor
-        zoomLabel.layer?.cornerRadius = 4
+        zoomLabel.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.65).cgColor
+        zoomLabel.layer?.cornerRadius = 10
         zoomLabel.isHidden = true
         content.addSubview(zoomLabel)
 
+        let bar = NSHostingView(rootView: PinActionBar(
+            copy: { [weak self] in self?.copyImage() },
+            save: { [weak self] in self?.saveImage() },
+            ocr: { [weak self] in self?.recognizeText() },
+            close: { [weak self] in self?.close() }))
+        bar.alphaValue = 0
+        content.addSubview(bar)
+        actionBar = bar
+
         contentView = content
         content.menu = makeMenu()
+        setHovering(false)
+        alphaValue = 0
+    }
+
+    override func orderFrontRegardless() {
+        super.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.18; animator().alphaValue = 1 }
+    }
+
+    /// Hover reveals an accent border and a floating action bar (when there is room for it).
+    func setHovering(_ hovering: Bool) {
+        contentView?.layer?.borderColor = hovering
+            ? NSColor.controlAccentColor.withAlphaComponent(0.85).cgColor
+            : NSColor.white.withAlphaComponent(0.18).cgColor
+        guard let bar = actionBar, let content = contentView else { return }
+        let size = bar.fittingSize
+        bar.frame = CGRect(x: (content.bounds.width - size.width) / 2, y: 8, width: size.width, height: size.height)
+        let fits = content.bounds.width >= size.width + 16 && content.bounds.height >= size.height + 24
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.15
+            bar.animator().alphaValue = hovering && fits ? 1 : 0
+        }
     }
 
     override var canBecomeKey: Bool { true }
@@ -114,6 +147,7 @@ final class PinWindow: NSPanel {
         let origin = CGPoint(x: a.x - size.width * fx, y: a.y - size.height * fy)
         zoom = newZoom
         setFrame(CGRect(origin: origin, size: size).integral, display: true)
+        setHovering(true)
         showLabel("\(Int(round(zoom * 100)))%")
     }
 
@@ -168,10 +202,55 @@ final class PinWindow: NSPanel {
 private final class PinContentView: NSView {
     weak var owner: PinWindow?
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) { owner?.setHovering(true) }
+    override func mouseExited(with event: NSEvent) { owner?.setHovering(false) }
+
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 { owner?.close(); return }
         window?.performDrag(with: event)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+struct PinActionBar: View {
+    let copy: () -> Void
+    let save: () -> Void
+    let ocr: () -> Void
+    let close: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            button("doc.on.doc", "复制 (⌘C)", copy)
+            button("square.and.arrow.down", "保存 (⌘S)", save)
+            button("text.viewfinder", "识别文字 (⌘T)", ocr)
+            Rectangle().fill(.white.opacity(0.2)).frame(width: 1, height: 14).padding(.horizontal, 2)
+            button("xmark", "关闭 (Esc)", close)
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 3)
+        .background(Capsule(style: .continuous).fill(Color.black.opacity(0.62)))
+        .overlay(Capsule(style: .continuous).strokeBorder(.white.opacity(0.14), lineWidth: 0.5))
+        .environment(\.colorScheme, .dark)
+        .fixedSize()
+    }
+
+    private func button(_ symbol: String, _ help: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 26, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
 }

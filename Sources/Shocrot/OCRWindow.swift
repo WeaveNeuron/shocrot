@@ -79,6 +79,7 @@ struct OCRView: View {
         }
         .ignoresSafeArea()
         .task { if model.isLoading { await model.run() } }
+        .onExitCommand { NSApp.keyWindow?.performClose(nil) }
         .translationPresentation(isPresented: $showTranslation, text: model.text)
     }
 

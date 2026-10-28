@@ -159,6 +159,7 @@ final class Settings: ObservableObject {
     @Published var afterCapture: AfterCaptureAction { didSet { d.set(afterCapture.rawValue, forKey: "afterCapture") } }
     @Published var playSound: Bool { didSet { d.set(playSound, forKey: "playSound") } }
     @Published var showMagnifier: Bool { didSet { d.set(showMagnifier, forKey: "showMagnifier") } }
+    @Published var showPreview: Bool { didSet { d.set(showPreview, forKey: "showPreview") } }
     @Published var ocrAutoCopy: Bool { didSet { d.set(ocrAutoCopy, forKey: "ocrAutoCopy") } }
     @Published var ocrShowWindow: Bool { didSet { d.set(ocrShowWindow, forKey: "ocrShowWindow") } }
     @Published var ocrKeepLineBreaks: Bool { didSet { d.set(ocrKeepLineBreaks, forKey: "ocrKeepLineBreaks") } }
@@ -198,6 +199,7 @@ final class Settings: ObservableObject {
         afterCapture = AfterCaptureAction(rawValue: d.string(forKey: "afterCapture") ?? "") ?? .edit
         playSound = d.object(forKey: "playSound") as? Bool ?? true
         showMagnifier = d.object(forKey: "showMagnifier") as? Bool ?? true
+        showPreview = d.object(forKey: "showPreview") as? Bool ?? true
         ocrAutoCopy = d.object(forKey: "ocrAutoCopy") as? Bool ?? true
         ocrShowWindow = d.object(forKey: "ocrShowWindow") as? Bool ?? true
         ocrKeepLineBreaks = d.object(forKey: "ocrKeepLineBreaks") as? Bool ?? true

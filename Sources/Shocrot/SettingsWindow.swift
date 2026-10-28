@@ -40,6 +40,7 @@ private struct GeneralSettings: View {
                 Toggle("登录时自动启动", isOn: $s.launchAtLogin)
                 Toggle("截图时播放快门声", isOn: $s.playSound)
                 Toggle("选区时显示放大镜和取色", isOn: $s.showMagnifier)
+                Toggle("截图后在角落显示预览", isOn: $s.showPreview)
                 Toggle("保留历史记录", isOn: $s.keepHistory)
             }
             Section("截图") {
