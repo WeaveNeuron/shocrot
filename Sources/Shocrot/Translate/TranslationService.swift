@@ -52,20 +52,39 @@ struct AppleTranslationService: TranslationService {
 
     func translate(_ text: String, from source: Language, to target: Language) -> AsyncThrowingStream<String, Error> {
         translationStream { continuation in
-            switch await LanguageAvailability().status(from: source.locale, to: target.locale) {
-            case .unsupported:
-                throw TranslationFailure(errorDescription: "Apple 翻译暂不支持 \(source.name) → \(target.name)")
-            case .supported:
-                throw TranslationFailure(errorDescription: "需要先下载 \(source.name) 和 \(target.name) 的离线翻译语言",
-                                         recovery: .downloadLanguages)
-            case .installed:
-                break
-            @unknown default:
-                break
-            }
-            let session = TranslationSession(installedSource: source.locale, target: target.locale)
+            let (from, to) = try await Self.installedPair(source, target)
+            let session = TranslationSession(installedSource: from, target: to)
             continuation.yield(try await session.translate(text).targetText)
         }
+    }
+
+    /// Plain "en" resolves to en-US; if the user downloaded another variant (e.g. English UK), use that instead.
+    private static func installedPair(_ source: Language, _ target: Language) async throws
+        -> (Locale.Language, Locale.Language) {
+        let availability = LanguageAvailability()
+        var supported = false
+        for from in variants(source) {
+            for to in variants(target) {
+                switch await availability.status(from: from, to: to) {
+                case .installed: return (from, to)
+                case .supported: supported = true
+                default: break
+                }
+            }
+        }
+        guard supported else {
+            throw TranslationFailure(errorDescription: "Apple 翻译暂不支持 \(source.name) → \(target.name)")
+        }
+        throw TranslationFailure(errorDescription: "需要先下载 \(source.name) 和 \(target.name) 的离线翻译语言",
+                                 recovery: .downloadLanguages)
+    }
+
+    private static func variants(_ language: Language) -> [Locale.Language] {
+        let regional: [String: [String]] = [
+            "en": ["en-US", "en-GB", "en-AU", "en-IN"], "es": ["es-ES", "es-MX"], "pt": ["pt-BR", "pt-PT"],
+            "fr": ["fr-FR", "fr-CA"], "zh-Hant": ["zh-TW", "zh-HK"],
+        ]
+        return ([language.code] + (regional[language.code] ?? [])).map { Locale.Language(identifier: $0) }
     }
 }
 
