@@ -58,7 +58,11 @@ cat > "$APP/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-codesign --force --deep --sign - --identifier com.weaveneuron.shocrot "$APP"
+# A stable identity keeps macOS privacy grants across rebuilds; ad-hoc changes them every build.
+# Create one with scripts/make_local_cert.sh.
+IDENTITY="${SHOCROT_SIGN_IDENTITY:-Shocrot Local Signing}"
+if security find-certificate -c "$IDENTITY" >/dev/null 2>&1; then SIGN="$IDENTITY"; else SIGN="-"; fi
+codesign --force --deep --sign "$SIGN" --identifier com.weaveneuron.shocrot "$APP"
 echo "Built $APP"
 
 if [[ "${1:-}" == "--install" ]]; then
