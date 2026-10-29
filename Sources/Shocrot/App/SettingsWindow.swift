@@ -43,7 +43,6 @@ struct SettingsView: View {
 
 private struct GeneralSettings: View {
     @ObservedObject private var s = Settings.shared
-    @State private var hasPermission = ScreenCapturer.hasPermission
 
     var body: some View {
         Form {
@@ -71,22 +70,10 @@ private struct GeneralSettings: View {
                 }
             }
             Section("权限") {
-                LabeledContent("屏幕录制") {
-                    if hasPermission {
-                        Label("已授权", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                    } else {
-                        Button("前往授权") {
-                            ScreenCapturer.requestPermission()
-                            ScreenCapturer.openPermissionSettings()
-                        }
-                    }
-                }
+                ForEach(Permission.allCases) { PermissionRow($0) }
             }
         }
         .formStyle(.grouped)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            hasPermission = ScreenCapturer.hasPermission
-        }
     }
 
     private func chooseFolder() {
@@ -241,7 +228,7 @@ private struct TranslateSettings: View {
     @ObservedObject private var s = Settings.shared
     @State private var apiKey = Keychain.llmAPIKey ?? ""
     @State private var testStatus: String?
-    @State private var axTrusted = SelectionReader.isTrusted
+    @State private var models: [String] = []
 
     var body: some View {
         Form {
@@ -289,7 +276,21 @@ private struct TranslateSettings: View {
                     TextField("接口地址", text: $s.llm.baseURL, prompt: Text("https://…/v1"))
                     SecureField("API Key", text: $apiKey, prompt: Text("本地模型可留空"))
                         .onChange(of: apiKey) { _, key in Keychain.llmAPIKey = key }
-                    TextField("模型", text: $s.llm.model)
+                    LabeledContent("模型") {
+                        HStack(spacing: 6) {
+                            TextField("模型", text: $s.llm.model).labelsHidden()
+                            if !models.isEmpty {
+                                Menu {
+                                    ForEach(models, id: \.self) { m in Button(m) { s.llm.model = m } }
+                                } label: {
+                                    Image(systemName: "chevron.up.chevron.down")
+                                }
+                                .menuStyle(.button).menuIndicator(.hidden).fixedSize()
+                                .help("从已安装的模型中选择")
+                            }
+                        }
+                    }
+                    .task(id: s.llm.baseURL + apiKey) { await loadModels() }
                     Toggle("关闭思考（推理模型响应更快）", isOn: $s.llm.disableThinking)
                     LabeledContent {
                         Button("测试连接", action: test)
@@ -305,21 +306,16 @@ private struct TranslateSettings: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-
-            Section("划词翻译") {
-                LabeledContent("辅助功能权限") {
-                    if axTrusted {
-                        Label("已授权", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                    } else {
-                        Button("前往授权") { SelectionReader.requestTrust(); SelectionReader.openSettings() }
-                    }
-                }
-            }
         }
         .formStyle(.grouped)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            axTrusted = SelectionReader.isTrusted
-        }
+    }
+
+    /// Lists the endpoint's models; if the configured one isn't there (e.g. a preset default), picks the first.
+    private func loadModels() async {
+        try? await Task.sleep(for: .milliseconds(400)) // debounce typing in the URL / key fields
+        guard !Task.isCancelled else { return }
+        models = (try? await LLMTranslationService.models(config: s.llm, apiKey: apiKey)) ?? []
+        if let first = models.first, !models.contains(s.llm.model) { s.llm.model = first }
     }
 
     private func test() {

@@ -35,13 +35,6 @@ enum ScreenCapturer {
         return hasPermission
     }
 
-    @discardableResult
-    static func requestPermission() -> Bool { CGRequestScreenCaptureAccess() }
-
-    static func openPermissionSettings() {
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
-    }
-
     /// Captures every connected display at native resolution.
     static func captureAllScreens() async throws -> [ScreenSnapshot] {
         #if DEBUG

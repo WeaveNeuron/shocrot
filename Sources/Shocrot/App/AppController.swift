@@ -79,8 +79,10 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         addItem(to: menu, "打开截图文件夹", "folder", #selector(openFolder))
         addItem(to: menu, "关闭全部贴图", "pin.slash", #selector(closePins))
         menu.addItem(.separator())
-        if !ScreenCapturer.hasPermission {
-            addItem(to: menu, "授予屏幕录制权限…", "exclamationmark.triangle", #selector(showOnboarding))
+        switch Permission.screenRecording.status {
+        case .granted: break
+        case .needsRelaunch: addItem(to: menu, "重新启动以启用屏幕录制", "arrow.clockwise", #selector(relaunch))
+        case .missing: addItem(to: menu, "开启屏幕录制权限…", "exclamationmark.triangle", #selector(showOnboarding))
         }
         addItem(to: menu, "设置…", "gearshape", #selector(showSettings), key: ",")
         addItem(to: menu, "退出 Shocrot", "power", #selector(quit), key: "q")
@@ -107,6 +109,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         NSWorkspace.shared.open(Settings.shared.saveDirectory)
     }
     @objc private func closePins() { PinWindow.closeAll() }
+    @objc private func relaunch() { Permission.relaunch() }
     @objc private func quit() { NSApp.terminate(nil) }
 
     private func makeMainMenu() -> NSMenu {
@@ -260,7 +263,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
 
     func translateSelection() {
         guard SelectionReader.isTrusted else {
-            SelectionReader.requestTrust()
+            Permission.accessibility.request()
             Feedback.toast("划词翻译需要“辅助功能”权限", symbol: "exclamationmark.triangle.fill")
             return
         }

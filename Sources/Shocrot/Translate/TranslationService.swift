@@ -192,6 +192,17 @@ struct LLMTranslationService: TranslationService {
         }
     }
 
+    /// Model IDs offered by the endpoint (`GET /models`), e.g. the models installed in Ollama.
+    static func models(config: LLMConfig, apiKey: String?) async throws -> [String] {
+        let base = config.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        guard let url = URL(string: base + "/models") else { return [] }
+        var request = URLRequest(url: url, timeoutInterval: 5)
+        if let apiKey, !apiKey.isEmpty { request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let list = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["data"] as? [[String: Any]]
+        return (list ?? []).compactMap { $0["id"] as? String }.sorted()
+    }
+
     /// Reasoning models (e.g. DeepSeek-R1, Qwen3) may emit <think>…</think>; hide it.
     private static func stripThinking(_ s: String) -> String {
         guard s.hasPrefix("<think>") else { return s }

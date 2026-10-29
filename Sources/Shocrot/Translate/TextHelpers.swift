@@ -65,14 +65,6 @@ final class Speaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate, @u
 enum SelectionReader {
     static var isTrusted: Bool { AXIsProcessTrusted() }
 
-    static func requestTrust() {
-        AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
-    }
-
-    static func openSettings() {
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-    }
-
     static func selectedText() async -> String? {
         if let text = viaAccessibility(), !text.isEmpty { return text }
         return await viaCopy()
