@@ -52,6 +52,8 @@ enum Permission: String, CaseIterable, Identifiable {
         // A record left by an older signature of the app shows as "on" but never matches; dragging the app in
         // again only flips that record's switch. Clearing it first makes the drag create a fresh, matching one.
         if status == .missing { resetRecord() }
+        // macOS relaunches the app after the grant; bring the guide back then so the user sees the result.
+        UserDefaults.standard.set(true, forKey: Self.flowPendingKey)
         let bundleID = "com.apple.systempreferences"
         let open = {
             // macOS only lets the opened app come forward if we hand over activation explicitly.
@@ -71,6 +73,8 @@ enum Permission: String, CaseIterable, Identifiable {
             open()
         }
     }
+
+    static let flowPendingKey = "permissionFlowPending"
 
     /// Removes Shocrot's own record for this permission (never touches other apps).
     private func resetRecord() {

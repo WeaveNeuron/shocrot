@@ -27,7 +27,10 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
             MainActor.assumeIsolated { self?.registerHotKeys() }
         }
 
-        if !UserDefaults.standard.bool(forKey: "onboarded") || !ScreenCapturer.hasPermission {
+        let defaults = UserDefaults.standard
+        if !defaults.bool(forKey: "onboarded") || !ScreenCapturer.hasPermission
+            || defaults.bool(forKey: Permission.flowPendingKey) {
+            defaults.removeObject(forKey: Permission.flowPendingKey)
             OnboardingWindow.show()
         }
     }

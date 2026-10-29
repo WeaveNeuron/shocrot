@@ -9,7 +9,10 @@ enum SettingsWindow {
         if window == nil {
             let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
             w.title = "Shocrot 设置"
-            w.styleMask = [.titled, .closable]
+            w.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
+            w.titlebarAppearsTransparent = true
+            w.titleVisibility = .hidden
+            w.toolbarStyle = .unified
             w.isReleasedWhenClosed = false
             w.center()
             window = w
@@ -19,25 +22,118 @@ enum SettingsWindow {
     }
 }
 
-enum SettingsTab: Hashable { case general, shortcuts, ocr, translate, about }
+enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
+    case general, shortcuts, ocr, translate, about
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general: "通用"
+        case .shortcuts: "快捷键"
+        case .ocr: "文字识别"
+        case .translate: "翻译"
+        case .about: "关于"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .general: "截图行为、保存位置与系统权限"
+        case .shortcuts: "全局快捷键，在任何 App 中都可使用"
+        case .ocr: "识别语言与结果格式"
+        case .translate: "翻译服务、语言与大模型接入"
+        case .about: "版本信息"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .general: "gearshape.fill"
+        case .shortcuts: "command"
+        case .ocr: "text.viewfinder"
+        case .translate: "translate"
+        case .about: "info"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .general: .gray
+        case .shortcuts: .indigo
+        case .ocr: .orange
+        case .translate: .blue
+        case .about: .teal
+        }
+    }
+}
 
 final class SettingsRouter: ObservableObject {
     static let shared = SettingsRouter()
     @Published var tab: SettingsTab = .general
 }
 
+/// System Settings–style layout: a sidebar of colored icons, a header and a grouped form per page.
 struct SettingsView: View {
     @ObservedObject private var router = SettingsRouter.shared
 
     var body: some View {
-        TabView(selection: $router.tab) {
-            GeneralSettings().tabItem { Label("通用", systemImage: "gearshape") }.tag(SettingsTab.general)
-            ShortcutSettings().tabItem { Label("快捷键", systemImage: "command") }.tag(SettingsTab.shortcuts)
-            OCRSettings().tabItem { Label("文字识别", systemImage: "text.viewfinder") }.tag(SettingsTab.ocr)
-            TranslateSettings().tabItem { Label("翻译", systemImage: "translate") }.tag(SettingsTab.translate)
-            AboutView().tabItem { Label("关于", systemImage: "info.circle") }.tag(SettingsTab.about)
+        NavigationSplitView {
+            List(SettingsTab.allCases, selection: Binding(get: { router.tab }, set: { if let t = $0 { router.tab = t } })) { tab in
+                Label {
+                    Text(tab.title)
+                } icon: {
+                    SettingsIcon(tab: tab, size: 22)
+                }
+                .padding(.vertical, 2)
+                .tag(tab)
+            }
+            .navigationSplitViewColumnWidth(190)
+            .toolbar(removing: .sidebarToggle)
+        } detail: {
+            VStack(spacing: 0) {
+                if router.tab != .about {
+                    HStack(spacing: 12) {
+                        SettingsIcon(tab: router.tab, size: 34)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(router.tab.title).font(.system(size: 17, weight: .semibold))
+                            Text(router.tab.subtitle).font(.callout).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.top, 14)
+                }
+                page.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .toolbar(removing: .title)
         }
-        .frame(width: 540, height: 540)
+        .frame(width: 720, height: 640)
+    }
+
+    @ViewBuilder private var page: some View {
+        switch router.tab {
+        case .general: GeneralSettings()
+        case .shortcuts: ShortcutSettings()
+        case .ocr: OCRSettings()
+        case .translate: TranslateSettings()
+        case .about: AboutView()
+        }
+    }
+}
+
+/// A rounded, tinted square with a white glyph, like the icons in System Settings.
+private struct SettingsIcon: View {
+    let tab: SettingsTab
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: tab.symbol)
+            .font(.system(size: size * 0.5, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(tab.tint.gradient, in: RoundedRectangle(cornerRadius: size * 0.26, style: .continuous))
+            .shadow(color: .black.opacity(0.15), radius: 1, y: 0.5)
     }
 }
 
@@ -215,7 +311,7 @@ private struct AboutView: View {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable().frame(width: 96, height: 96)
             Text("Shocrot").font(.system(size: 22, weight: .semibold))
-            Text("截图 · 标注 · 贴图 · 文字识别")
+            Text("截图 · 标注 · 贴图 · 文字识别 · 翻译")
                 .foregroundStyle(.secondary)
             Text("版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")")
                 .font(.caption).foregroundStyle(.tertiary)
