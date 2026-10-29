@@ -13,28 +13,26 @@ struct OCRResult {
     let lines: [OCRLine]
     let barcodes: [String]
 
-    /// Joins recognized lines, grouping lines that sit on the same visual row
-    /// and separating paragraphs when the vertical gap is large.
+    /// Joins recognized lines: lines on the same visual row share a line, and a large vertical gap
+    /// starts a new paragraph. `keepLineBreaks: false` reflows wrapped lines within a paragraph
+    /// (for copying and translation).
     func text(keepLineBreaks: Bool) -> String {
-        guard !lines.isEmpty else { return "" }
-        if !keepLineBreaks {
-            return lines.map(\.text).reduce("") { acc, next in
-                guard let last = acc.last, let first = next.first else { return acc + next }
-                // Avoid inserting spaces between CJK characters.
-                let needsSpace = !(last.isCJK || first.isCJK) && last != " "
-                return acc + (needsSpace ? " " : "") + next
-            }
-        }
         var out = ""
         var previous: OCRLine?
         for line in lines {
             if let p = previous {
                 let sameRow = abs(p.box.midY - line.box.midY) < min(p.box.height, line.box.height) * 0.5
+                let newParagraph = p.box.minY - line.box.maxY > max(p.box.height, line.box.height) * 0.9
                 if sameRow {
                     out += "  "
-                } else {
-                    let gap = p.box.minY - line.box.maxY
-                    out += gap > max(p.box.height, line.box.height) * 0.9 ? "\n\n" : "\n"
+                } else if newParagraph {
+                    out += "\n\n"
+                } else if keepLineBreaks {
+                    out += "\n"
+                } else if out.hasSuffix("-"), out.dropLast().last?.isLetter == true, line.text.first?.isLowercase == true {
+                    out.removeLast()  // re-join a word hyphenated across lines
+                } else if let last = out.last, let first = line.text.first, !(last.isCJK || first.isCJK), last != " " {
+                    out += " "
                 }
             }
             out += line.text
@@ -92,7 +90,28 @@ struct VisionOCREngine: OCREngine {
         }
     }
 
+    /// Vision reads Latin text noticeably worse when a CJK language comes first, but drops CJK text
+    /// entirely when it doesn't. So with a mixed language list we also run a Latin-first pass in
+    /// parallel and prefer it whenever the image turns out to contain no CJK text.
     static func recognizeSync(_ image: CGImage, languages: [String]) throws -> OCRResult {
+        let isCJK = { (code: String) in ["zh", "ja", "ko"].contains { code.hasPrefix($0) } }
+        let latinFirst = languages.filter { !isCJK($0) } + languages.filter(isCJK)
+        guard let first = languages.first, isCJK(first), latinFirst.first.map(isCJK) == false else {
+            return try perform(image, languages: languages)
+        }
+        var results: [Result<OCRResult, Error>?] = [nil, nil]
+        let lock = NSLock()
+        DispatchQueue.concurrentPerform(iterations: 2) { i in
+            let r = Result { try perform(image, languages: i == 0 ? languages : latinFirst) }
+            lock.withLock { results[i] = r }
+        }
+        let primary = try results[0]!.get()
+        let hasCJK = primary.lines.contains { $0.text.contains(where: \.isCJK) }
+        if !hasCJK, let latin = try? results[1]?.get(), !latin.lines.isEmpty { return latin }
+        return primary
+    }
+
+    private static func perform(_ image: CGImage, languages: [String]) throws -> OCRResult {
         let textRequest = VNRecognizeTextRequest()
         textRequest.recognitionLevel = .accurate
         textRequest.usesLanguageCorrection = true
