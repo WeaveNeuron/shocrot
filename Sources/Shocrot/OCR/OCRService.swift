@@ -15,19 +15,29 @@ struct OCRResult {
 
     /// Joins recognized lines: lines on the same visual row share a line, and a large vertical gap
     /// starts a new paragraph. `keepLineBreaks: false` reflows wrapped lines within a paragraph
-    /// (for copying and translation).
+    /// (for copying and translation) but keeps headings, list items, short lines and indented
+    /// paragraphs apart, following the layout cues Easydict uses. (Vision's box heights are too
+    /// noisy to detect font size changes, so headings are caught as short lines.)
     func text(keepLineBreaks: Bool) -> String {
+        let left = lines.map(\.box.minX).min() ?? 0
+        let right = lines.map(\.box.maxX).max() ?? 1
+        let width = max(right - left, .ulpOfOne)
+        // Poems and similar blocks: every line starts with a capital letter.
+        let allCapitalized = lines.count >= 3 && lines.allSatisfy { $0.text.first?.isUppercase == true }
+
         var out = ""
         var previous: OCRLine?
         for line in lines {
             if let p = previous {
                 let sameRow = abs(p.box.midY - line.box.midY) < min(p.box.height, line.box.height) * 0.5
-                let newParagraph = p.box.minY - line.box.maxY > max(p.box.height, line.box.height) * 0.9
+                let gap = p.box.minY - line.box.maxY
                 if sameRow {
                     out += "  "
-                } else if newParagraph {
+                } else if gap > max(p.box.height, line.box.height) * 0.9 {
                     out += "\n\n"
-                } else if keepLineBreaks {
+                } else if keepLineBreaks || allCapitalized || line.text.startsListItem
+                            || p.box.maxX < right - width * 0.2          // previous line ends early
+                            || line.box.minX > left + width * 0.03 {     // indented first line
                     out += "\n"
                 } else if out.hasSuffix("-"), out.dropLast().last?.isLetter == true, line.text.first?.isLowercase == true {
                     out.removeLast()  // re-join a word hyphenated across lines
@@ -39,6 +49,15 @@ struct OCRResult {
             previous = line
         }
         return out
+    }
+}
+
+private extension String {
+    /// "• item", "- item", "1. step", "2) step", "(3) step", "① step".
+    var startsListItem: Bool {
+        guard let first = first else { return false }
+        if "•·▪◦‣-–—*※①②③④⑤⑥⑦⑧⑨⑩".contains(first) { return true }
+        return range(of: #"^\(?[0-9]{1,2}[.)、]"#, options: .regularExpression) != nil
     }
 }
 
