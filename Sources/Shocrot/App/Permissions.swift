@@ -49,6 +49,9 @@ enum Permission: String, CaseIterable, Identifiable {
 
     /// Opens the matching System Settings pane with a drag-to-grant helper attached to it.
     @MainActor func request() {
+        // A record left by an older signature of the app shows as "on" but never matches; dragging the app in
+        // again only flips that record's switch. Clearing it first makes the drag create a fresh, matching one.
+        if status == .missing { resetRecord() }
         let bundleID = "com.apple.systempreferences"
         let open = {
             // macOS only lets the opened app come forward if we hand over activation explicitly.
@@ -69,16 +72,14 @@ enum Permission: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Clears a stale entry (e.g. one recorded for an older signature of the app), then reopens the pane
-    /// so the user can add the current build. Only touches Shocrot's own record.
-    @MainActor func resetRecord() {
+    /// Removes Shocrot's own record for this permission (never touches other apps).
+    private func resetRecord() {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
         task.arguments = ["reset", self == .screenRecording ? "ScreenCapture" : "Accessibility",
                           Bundle.main.bundleIdentifier ?? "com.weaveneuron.shocrot"]
         try? task.run()
         task.waitUntilExit()
-        request() // restarts System Settings so the list reflects the removal
     }
 
     private static var canReadWindowTitles: Bool {
@@ -277,15 +278,6 @@ private struct PermissionGuideView: View {
                 dragged = true
                 return NSItemProvider(object: Bundle.main.bundleURL as NSURL)
             }
-
-            HStack(spacing: 4) {
-                Image(systemName: "info.circle")
-                Text("开关已打开却仍无效？")
-                Button("重置记录", action: permission.resetRecord)
-                    .buttonStyle(.link)
-                    .help("清除 Shocrot 的旧授权记录，然后重新拖入")
-            }
-            .font(.system(size: 11)).foregroundStyle(.tertiary)
         }
         .padding(16)
         .frame(width: max(layout.width, 380))
