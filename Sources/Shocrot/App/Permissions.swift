@@ -49,12 +49,24 @@ enum Permission: String, CaseIterable, Identifiable {
 
     /// Opens the matching System Settings pane with a drag-to-grant helper attached to it.
     @MainActor func request() {
-        // macOS only lets the opened app come forward if we hand over activation explicitly.
-        NSApp.yieldActivation(toApplicationWithBundleIdentifier: "com.apple.systempreferences")
-        NSWorkspace.shared.open(paneURL, configuration: NSWorkspace.OpenConfiguration()) { app, _ in
-            DispatchQueue.main.async { app?.activate(options: .activateAllWindows) }
+        let bundleID = "com.apple.systempreferences"
+        let open = {
+            // macOS only lets the opened app come forward if we hand over activation explicitly.
+            NSApp.yieldActivation(toApplicationWithBundleIdentifier: bundleID)
+            NSWorkspace.shared.open(paneURL, configuration: NSWorkspace.OpenConfiguration()) { app, _ in
+                DispatchQueue.main.async { app?.activate(options: .activateAllWindows) }
+            }
+            PermissionGuide.show(for: self)
         }
-        PermissionGuide.show(for: self)
+        // An open sheet in System Settings blocks navigation, so start it fresh.
+        guard let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first else {
+            return open()
+        }
+        running.terminate()
+        Task { @MainActor in
+            for _ in 0..<40 where !running.isTerminated { try? await Task.sleep(for: .milliseconds(50)) }
+            open()
+        }
     }
 
     private static var canReadWindowTitles: Bool {
@@ -209,7 +221,7 @@ private struct PermissionGuideView: View {
                     .symbolEffect(.bounce.up, options: .repeat(.periodic(delay: 1.2)))
                 VStack(alignment: .leading, spacing: 3) {
                     Text("开启“\(permission.title)”").font(.system(size: 14, weight: .semibold))
-                    Text("拖进上方列表，或打开它的开关")
+                    Text("拖进上方列表，或打开它的开关").lineLimit(1).fixedSize()
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -251,8 +263,10 @@ private struct PermissionGuideView: View {
                 .font(.system(size: 11)).foregroundStyle(.tertiary)
         }
         .padding(16)
-        .frame(width: layout.width)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22, style: .continuous))
+        .frame(width: max(layout.width, 380))
+        // Tinted so whatever sits behind (e.g. a blue button) doesn't bleed through the glass.
+        .glassEffect(.regular.tint(Color(nsColor: .windowBackgroundColor).opacity(0.7)),
+                     in: .rect(cornerRadius: 22, style: .continuous))
         .padding(GuideLayout.inset)
     }
 }
