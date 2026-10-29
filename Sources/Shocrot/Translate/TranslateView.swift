@@ -78,12 +78,17 @@ struct TranslateView: View {
                         .padding(.top, 1)
                         .allowsHitTesting(false)
                 }
+                // TextEditor has no intrinsic height; a hidden copy of the text sizes it to fit.
+                Text(model.input + " ")
+                    .font(.system(size: 14))
+                    .padding(.horizontal, 5)
+                    .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 140, alignment: .topLeading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .hidden()
                 TextEditor(text: $model.input)
                     .font(.system(size: 14))
                     .scrollContentBackground(.hidden)
                     .focused($inputFocused)
-                    .frame(minHeight: 44, maxHeight: 140)
-                    .fixedSize(horizontal: false, vertical: true)
                     .onKeyPress(.return, phases: .down) { press in
                         guard !press.modifiers.contains(.shift) else { return .ignored }
                         model.translate()
