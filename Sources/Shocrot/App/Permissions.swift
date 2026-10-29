@@ -69,6 +69,18 @@ enum Permission: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Clears a stale entry (e.g. one recorded for an older signature of the app), then reopens the pane
+    /// so the user can add the current build. Only touches Shocrot's own record.
+    @MainActor func resetRecord() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        task.arguments = ["reset", self == .screenRecording ? "ScreenCapture" : "Accessibility",
+                          Bundle.main.bundleIdentifier ?? "com.weaveneuron.shocrot"]
+        try? task.run()
+        task.waitUntilExit()
+        request() // restarts System Settings so the list reflects the removal
+    }
+
     private static var canReadWindowTitles: Bool {
         let me = ProcessInfo.processInfo.processIdentifier
         let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[CFString: Any]] ?? []
@@ -210,6 +222,7 @@ private struct PermissionGuideView: View {
     @ObservedObject var layout: GuideLayout
     let onClose: () -> Void
     @State private var hovering = false
+    @State private var dragged = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -221,8 +234,11 @@ private struct PermissionGuideView: View {
                     .symbolEffect(.bounce.up, options: .repeat(.periodic(delay: 1.2)))
                 VStack(alignment: .leading, spacing: 3) {
                     Text("开启“\(permission.title)”").font(.system(size: 14, weight: .semibold))
-                    Text("拖进上方列表，或打开它的开关").lineLimit(1).fixedSize()
+                    Text(dragged ? "验证指纹后，确认开关已打开" : "拖进上方列表，或打开它的开关")
+                        .lineLimit(1).fixedSize()
                         .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .contentTransition(.opacity)
+                        .animation(.easeOut(duration: 0.2), value: dragged)
                 }
                 Spacer(minLength: 0)
                 Button(action: onClose) {
@@ -257,10 +273,19 @@ private struct PermissionGuideView: View {
             .animation(.snappy(duration: 0.2), value: hovering)
             .onHover { hovering = $0; (hovering ? NSCursor.openHand : NSCursor.arrow).set() }
             .contentShape(RoundedRectangle(cornerRadius: 12))
-            .onDrag { NSItemProvider(object: Bundle.main.bundleURL as NSURL) }
+            .onDrag {
+                dragged = true
+                return NSItemProvider(object: Bundle.main.bundleURL as NSURL)
+            }
 
-            Label("已在列表中却不生效？选中它点「−」移除，再拖进来", systemImage: "info.circle")
-                .font(.system(size: 11)).foregroundStyle(.tertiary)
+            HStack(spacing: 4) {
+                Image(systemName: "info.circle")
+                Text("开关已打开却仍无效？")
+                Button("重置记录", action: permission.resetRecord)
+                    .buttonStyle(.link)
+                    .help("清除 Shocrot 的旧授权记录，然后重新拖入")
+            }
+            .font(.system(size: 11)).foregroundStyle(.tertiary)
         }
         .padding(16)
         .frame(width: max(layout.width, 380))
