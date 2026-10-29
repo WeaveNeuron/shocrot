@@ -177,6 +177,7 @@ final class Settings: ObservableObject {
     @Published var primaryLanguage: String { didSet { d.set(primaryLanguage, forKey: "primaryLanguage") } }
     @Published var secondaryLanguage: String { didSet { d.set(secondaryLanguage, forKey: "secondaryLanguage") } }
     @Published var appleTranslateEnabled: Bool { didSet { d.set(appleTranslateEnabled, forKey: "appleTranslateEnabled") } }
+    @Published var googleTranslateEnabled: Bool { didSet { d.set(googleTranslateEnabled, forKey: "googleTranslateEnabled") } }
     @Published var llm: LLMConfig { didSet { d.set(try? JSONEncoder().encode(llm), forKey: "llm") } }
     @Published var launchAtLogin: Bool {
         didSet {
@@ -222,6 +223,7 @@ final class Settings: ObservableObject {
         primaryLanguage = d.string(forKey: "primaryLanguage") ?? "zh-Hans"
         secondaryLanguage = d.string(forKey: "secondaryLanguage") ?? "en"
         appleTranslateEnabled = d.object(forKey: "appleTranslateEnabled") as? Bool ?? true
+        googleTranslateEnabled = d.bool(forKey: "googleTranslateEnabled")  // off: text would leave the Mac
         llm = d.data(forKey: "llm").flatMap { try? JSONDecoder().decode(LLMConfig.self, from: $0) } ?? LLMConfig()
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }

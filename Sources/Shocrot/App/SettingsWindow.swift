@@ -264,6 +264,14 @@ private struct TranslateSettings: View {
             }
 
             Section {
+                Toggle("启用 Google 翻译（免费，无需配置）", isOn: $s.googleTranslateEnabled)
+            } header: {
+                Text("在线翻译")
+            } footer: {
+                Text("需要联网，要翻译的文字会发送给 Google。").font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
                 Toggle("启用大模型翻译", isOn: $s.llm.enabled)
                 if s.llm.enabled {
                     Picker("预设", selection: Binding(

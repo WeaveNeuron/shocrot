@@ -15,6 +15,7 @@ enum TranslationServices {
         let s = Settings.shared
         var services: [TranslationService] = []
         if s.appleTranslateEnabled { services.append(AppleTranslationService()) }
+        if s.googleTranslateEnabled { services.append(GoogleTranslationService()) }
         if s.llm.enabled { services.append(LLMTranslationService(config: s.llm, apiKey: Keychain.llmAPIKey)) }
         return services
     }
@@ -64,6 +65,35 @@ struct AppleTranslationService: TranslationService {
             }
             let session = TranslationSession(installedSource: source.locale, target: target.locale)
             continuation.yield(try await session.translate(text).targetText)
+        }
+    }
+}
+
+// MARK: - Google (free web endpoint, no key)
+
+struct GoogleTranslationService: TranslationService {
+    let name = "Google 翻译"
+    let symbol = "globe"
+
+    func translate(_ text: String, from source: Language, to target: Language) -> AsyncThrowingStream<String, Error> {
+        translationStream { continuation in
+            let code = { (l: Language) in ["zh-Hans": "zh-CN", "zh-Hant": "zh-TW"][l.code] ?? l.code }
+            var url = URLComponents(string: "https://translate.googleapis.com/translate_a/single")!
+            url.queryItems = [.init(name: "client", value: "gtx"), .init(name: "dt", value: "t"),
+                              .init(name: "sl", value: code(source)), .init(name: "tl", value: code(target))]
+            var request = URLRequest(url: url.url!, timeoutInterval: 15)
+            request.httpMethod = "POST"  // keeps long text out of the URL
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            var form = URLComponents()
+            form.queryItems = [.init(name: "q", value: text)]
+            request.httpBody = form.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B").data(using: .utf8)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
+                  let segments = json.first as? [[Any]] else {
+                throw TranslationFailure(errorDescription: "Google 翻译暂时不可用，请检查网络")
+            }
+            continuation.yield(segments.compactMap { $0.first as? String }.joined())
         }
     }
 }
