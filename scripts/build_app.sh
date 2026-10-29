@@ -41,7 +41,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
-  <key>LSMinimumSystemVersion</key><string>14.4</string>
+  <key>LSMinimumSystemVersion</key><string>26.0</string>
   <key>LSUIElement</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
   <key>NSHighResolutionCapable</key><true/>
@@ -51,6 +51,8 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleURLName</key><string>com.weaveneuron.shocrot</string>
     <key>CFBundleURLSchemes</key><array><string>shocrot</string></array>
   </dict></array>
+  <key>NSAppTransportSecurity</key>
+  <dict><key>NSAllowsLocalNetworking</key><true/></dict>
   <key>NSScreenCaptureUsageDescription</key><string>Shocrot 需要截取屏幕内容来完成截图和文字识别。</string>
 </dict>
 </plist>

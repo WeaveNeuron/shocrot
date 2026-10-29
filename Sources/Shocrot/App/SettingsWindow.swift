@@ -4,7 +4,8 @@ import SwiftUI
 enum SettingsWindow {
     private static var window: NSWindow?
 
-    static func show() {
+    static func show(tab: SettingsTab? = nil) {
+        if let tab { SettingsRouter.shared.tab = tab }
         if window == nil {
             let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
             w.title = "Shocrot 设置"
@@ -18,15 +19,25 @@ enum SettingsWindow {
     }
 }
 
+enum SettingsTab: Hashable { case general, shortcuts, ocr, translate, about }
+
+final class SettingsRouter: ObservableObject {
+    static let shared = SettingsRouter()
+    @Published var tab: SettingsTab = .general
+}
+
 struct SettingsView: View {
+    @ObservedObject private var router = SettingsRouter.shared
+
     var body: some View {
-        TabView {
-            GeneralSettings().tabItem { Label("通用", systemImage: "gearshape") }
-            ShortcutSettings().tabItem { Label("快捷键", systemImage: "command") }
-            OCRSettings().tabItem { Label("文字识别", systemImage: "text.viewfinder") }
-            AboutView().tabItem { Label("关于", systemImage: "info.circle") }
+        TabView(selection: $router.tab) {
+            GeneralSettings().tabItem { Label("通用", systemImage: "gearshape") }.tag(SettingsTab.general)
+            ShortcutSettings().tabItem { Label("快捷键", systemImage: "command") }.tag(SettingsTab.shortcuts)
+            OCRSettings().tabItem { Label("文字识别", systemImage: "text.viewfinder") }.tag(SettingsTab.ocr)
+            TranslateSettings().tabItem { Label("翻译", systemImage: "translate") }.tag(SettingsTab.translate)
+            AboutView().tabItem { Label("关于", systemImage: "info.circle") }.tag(SettingsTab.about)
         }
-        .frame(width: 520, height: 500)
+        .frame(width: 540, height: 540)
     }
 }
 
@@ -223,5 +234,99 @@ private struct AboutView: View {
                 .font(.caption).foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private struct TranslateSettings: View {
+    @ObservedObject private var s = Settings.shared
+    @State private var apiKey = Keychain.llmAPIKey ?? ""
+    @State private var testStatus: String?
+    @State private var axTrusted = SelectionReader.isTrusted
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("首选语言", selection: $s.primaryLanguage) {
+                    ForEach(Language.all) { Text($0.name).tag($0.code) }
+                }
+                Picker("第二语言", selection: $s.secondaryLanguage) {
+                    ForEach(Language.all) { Text($0.name).tag($0.code) }
+                }
+            } footer: {
+                Text("首选语言的文字译为第二语言，其他语言一律译为首选语言。").font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("Apple 翻译") {
+                Toggle("启用 Apple 翻译（离线，免费）", isOn: $s.appleTranslateEnabled)
+                Button("管理离线语言…") {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension")!)
+                }
+            }
+
+            Section {
+                Toggle("启用大模型翻译", isOn: $s.llm.enabled)
+                if s.llm.enabled {
+                    Picker("预设", selection: Binding(
+                        get: { LLMConfig.presets.first { $0.baseURL == s.llm.baseURL }?.id ?? "" },
+                        set: { id in
+                            guard let p = LLMConfig.presets.first(where: { $0.id == id }) else { return }
+                            s.llm.baseURL = p.baseURL
+                            s.llm.model = p.model
+                            s.llm.name = p.name
+                            s.llm.disableThinking = p.disableThinking
+                        })) {
+                        ForEach(LLMConfig.presets) { Text($0.name).tag($0.id) }
+                        Text("自定义").tag("")
+                    }
+                    TextField("接口地址", text: $s.llm.baseURL, prompt: Text("https://…/v1"))
+                    SecureField("API Key", text: $apiKey, prompt: Text("本地模型可留空"))
+                        .onChange(of: apiKey) { _, key in Keychain.llmAPIKey = key }
+                    TextField("模型", text: $s.llm.model)
+                    Toggle("关闭思考（推理模型响应更快）", isOn: $s.llm.disableThinking)
+                    LabeledContent {
+                        Button("测试连接", action: test)
+                    } label: {
+                        Text(testStatus ?? "支持所有 OpenAI 兼容接口").foregroundStyle(.secondary).lineLimit(2)
+                    }
+                }
+            } header: {
+                Text("大模型")
+            } footer: {
+                if s.llm.enabled {
+                    Text("本地模型（Ollama / LM Studio）不出本机；云端服务会把待翻译文字发送给对应服务商。API Key 保存在钥匙串中。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            Section("划词翻译") {
+                LabeledContent("辅助功能权限") {
+                    if axTrusted {
+                        Label("已授权", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    } else {
+                        Button("前往授权") { SelectionReader.requestTrust(); SelectionReader.openSettings() }
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            axTrusted = SelectionReader.isTrusted
+        }
+    }
+
+    private func test() {
+        testStatus = "正在测试…"
+        let service = LLMTranslationService(config: s.llm, apiKey: apiKey)
+        Task { @MainActor in
+            do {
+                var output = ""
+                for try await partial in service.translate("Hello, world", from: .named("en"), to: .named("zh-Hans")) {
+                    output = partial
+                }
+                testStatus = "✓ 连接成功：\(output)"
+            } catch {
+                testStatus = "✗ \(error.localizedDescription)"
+            }
+        }
     }
 }

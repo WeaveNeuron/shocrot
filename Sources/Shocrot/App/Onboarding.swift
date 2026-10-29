@@ -35,7 +35,7 @@ struct OnboardingView: View {
                 .frame(width: 84, height: 84)
                 .padding(.top, 36)
             Text("欢迎使用 Shocrot").font(.system(size: 24, weight: .semibold)).padding(.top, 10)
-            Text("一个按键，截图、标注、贴图、识别文字。").foregroundStyle(.secondary).padding(.top, 4)
+            Text("一个按键，截图、标注、贴图、识别与翻译。").foregroundStyle(.secondary).padding(.top, 4)
 
             VStack(spacing: 10) {
                 ForEach(HotKeyAction.allCases) { action in
@@ -49,7 +49,8 @@ struct OnboardingView: View {
                         Spacer()
                         Text(Settings.shared.hotKeys[action]?.displayString ?? "—")
                             .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .frame(minWidth: 44)
+                            .padding(.horizontal, 6).padding(.vertical, 3)
                             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
                     }
                 }

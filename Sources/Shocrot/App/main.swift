@@ -12,7 +12,7 @@ if args.count >= 3, args[1] == "--ocr" {
             continue
         }
         do {
-            let result = try OCRService.recognizeSync(image, languages: Settings.shared.ocrLanguages)
+            let result = try VisionOCREngine.recognizeSync(image, languages: Settings.shared.ocrLanguages)
             print(result.text(keepLineBreaks: true))
             result.barcodes.forEach { print("[QR] \($0)") }
         } catch {
@@ -23,6 +23,7 @@ if args.count >= 3, args[1] == "--ocr" {
     exit(status)
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleURL(_:reply:)),
@@ -40,10 +41,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
 
-    /// shocrot://capture | ocr | fullscreen | pin | ocr-clipboard | history | settings
+    /// shocrot://capture | ocr | fullscreen | pin | ocr-clipboard | translate[?text=] | translate-selection | translate-capture | history | settings
     @objc private func handleURL(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let string = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
-              let host = URL(string: string)?.host else { return }
+              let url = URL(string: string), let host = url.host else { return }
+        let text = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "text" }?.value
         let app = AppController.shared
         switch host {
         case "capture": app.perform(.captureArea)
@@ -51,6 +53,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "fullscreen": app.perform(.captureScreen)
         case "pin": app.perform(.pinClipboard)
         case "ocr-clipboard": app.recognizeClipboard()
+        case "translate": TranslatePanel.show(text: text)
+        case "translate-selection": app.perform(.translateSelection)
+        case "translate-capture": app.perform(.translateCapture)
         case "history": app.showHistory()
         case "settings": app.showSettings()
         default: break
@@ -64,8 +69,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-let app = NSApplication.shared
-let delegate = AppDelegate()
-app.delegate = delegate
-app.setActivationPolicy(.accessory)
-app.run()
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = AppDelegate()
+    app.delegate = delegate
+    app.setActivationPolicy(.accessory)
+    app.run()
+}

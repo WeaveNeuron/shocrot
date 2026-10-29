@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import Translation
 
 final class OCRModel: ObservableObject {
     let image: CGImage
@@ -66,7 +65,6 @@ enum OCRWindow {
 struct OCRView: View {
     @ObservedObject var model: OCRModel
     @State private var hoveredLine: UUID?
-    @State private var showTranslation = false
     @State private var copied = false
 
     var body: some View {
@@ -80,7 +78,6 @@ struct OCRView: View {
         .ignoresSafeArea()
         .task { if model.isLoading { await model.run() } }
         .onExitCommand { NSApp.keyWindow?.performClose(nil) }
-        .translationPresentation(isPresented: $showTranslation, text: model.text)
     }
 
     // MARK: Image with recognized line boxes
@@ -195,7 +192,7 @@ struct OCRView: View {
 
             Divider()
             HStack(spacing: 8) {
-                Button { showTranslation = true } label: { Label("翻译", systemImage: "translate") }
+                Button { TranslatePanel.show(text: model.text) } label: { Label("翻译", systemImage: "translate") }
                     .disabled(model.text.isEmpty)
                 Button(action: search) { Label("搜索", systemImage: "magnifyingglass") }
                     .disabled(model.text.isEmpty)

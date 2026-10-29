@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum ToolbarAction {
-    case undo, redo, ocr, pin, save, saveAs, cancel, copy
+    case undo, redo, ocr, translate, pin, save, saveAs, cancel, copy
 }
 
 /// Annotation tool state; shared so the last tool/color/size are remembered between captures.
@@ -49,6 +49,7 @@ struct CaptureToolbar: View {
                     Divider().frame(height: 18).padding(.horizontal, 4)
                 }
                 ToolButton(symbol: "text.viewfinder", help: "识别文字 (⌘T)") { onAction(.ocr) }
+                ToolButton(symbol: "translate", help: "翻译 (⌘D)") { onAction(.translate) }
                 ToolButton(symbol: "pin", help: "贴到屏幕 (⌘P)") { onAction(.pin) }
                 ToolButton(symbol: "square.and.arrow.down", help: "保存 (⌘S)，另存为 (⇧⌘S)") { onAction(.save) }
                     .contextMenu { Button("另存为…") { onAction(.saveAs) } }

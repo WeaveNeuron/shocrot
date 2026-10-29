@@ -44,15 +44,29 @@ struct OCRResult {
     }
 }
 
+/// A text recognizer. Other engines (cloud OCR, vision LLMs, PaddleOCR…) plug in by conforming
+/// to this protocol and being assigned to `OCRService.engine`.
+protocol OCREngine {
+    var name: String { get }
+    func recognize(_ image: CGImage, languages: [String]) async throws -> OCRResult
+}
+
 enum OCRService {
+    static var engine: OCREngine = VisionOCREngine()
+
     static func recognize(_ image: CGImage, languages: [String]) async throws -> OCRResult {
+        try await engine.recognize(image, languages: languages)
+    }
+}
+
+/// Apple Vision, on-device.
+struct VisionOCREngine: OCREngine {
+    let name = "Apple Vision"
+
+    func recognize(_ image: CGImage, languages: [String]) async throws -> OCRResult {
         try await withCheckedThrowingContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    cont.resume(returning: try recognizeSync(image, languages: languages))
-                } catch {
-                    cont.resume(throwing: error)
-                }
+                cont.resume(with: Result { try Self.recognizeSync(image, languages: languages) })
             }
         }
     }

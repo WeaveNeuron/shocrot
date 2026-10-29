@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+@MainActor
 final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     static let shared = AppController()
 
@@ -20,9 +21,9 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
 
         NSApp.mainMenu = makeMainMenu()
         registerHotKeys()
-        OCRService.warmUp(languages: Settings.shared.ocrLanguages)
+        VisionOCREngine.warmUp(languages: Settings.shared.ocrLanguages)
         NotificationCenter.default.addObserver(forName: .hotKeysChanged, object: nil, queue: .main) { [weak self] _ in
-            self?.registerHotKeys()
+            MainActor.assumeIsolated { self?.registerHotKeys() }
         }
 
         if !UserDefaults.standard.bool(forKey: "onboarded") || !ScreenCapturer.hasPermission {
@@ -47,6 +48,9 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         case .captureOCR: startCapture(.ocr)
         case .captureScreen: captureFullScreen()
         case .pinClipboard: pinClipboard()
+        case .translateSelection: translateSelection()
+        case .translateCapture: startCapture(.translate)
+        case .translateInput: TranslatePanel.show()
         }
     }
 
@@ -55,6 +59,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         for action in HotKeyAction.allCases {
+            if action == .translateSelection { menu.addItem(.separator()) }
             let item = NSMenuItem(title: action.title, action: #selector(menuAction(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = action.rawValue
@@ -197,6 +202,8 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
             ImageOutput.saveAs(result.image)
         case .pin:
             PinWindow.pin(result.image, scale: result.scale, at: result.globalRect)
+        case .translate:
+            translate(image: result.rawImage, historyID: historyID)
         case .ocr:
             recognize(image: result.rawImage, scale: result.scale, historyID: historyID)
         }
@@ -221,6 +228,35 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                 if !wasAutoCopy { ImageOutput.copyText(model.text) }
                 Feedback.toast("已复制 \(model.text.filter { !$0.isWhitespace }.count) 个字")
             }
+        }
+    }
+
+    // MARK: - Translate
+
+    func translate(image: CGImage, historyID: UUID? = nil) {
+        Task { @MainActor in
+            do {
+                let result = try await OCRService.recognize(image, languages: Settings.shared.ocrLanguages)
+                let text = result.text(keepLineBreaks: false)
+                guard !text.isEmpty else { Feedback.toast("没有识别到文字", symbol: "exclamationmark.triangle.fill"); return }
+                if let historyID { HistoryStore.shared.setText(text, for: historyID) }
+                TranslatePanel.show(text: text)
+            } catch {
+                Feedback.error(error)
+            }
+        }
+    }
+
+    func translateSelection() {
+        guard SelectionReader.isTrusted else {
+            SelectionReader.requestTrust()
+            Feedback.toast("划词翻译需要“辅助功能”权限", symbol: "exclamationmark.triangle.fill")
+            return
+        }
+        let mouse = NSEvent.mouseLocation
+        Task { @MainActor in
+            let text = await SelectionReader.selectedText()
+            TranslatePanel.show(text: text?.isEmpty == false ? text : nil, near: mouse)
         }
     }
 

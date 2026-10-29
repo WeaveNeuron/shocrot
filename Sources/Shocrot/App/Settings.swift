@@ -88,7 +88,7 @@ struct HotKey: Codable, Equatable {
 }
 
 enum HotKeyAction: String, CaseIterable, Identifiable {
-    case captureArea, captureOCR, captureScreen, pinClipboard
+    case captureArea, captureOCR, captureScreen, pinClipboard, translateSelection, translateCapture, translateInput
 
     var id: String { rawValue }
 
@@ -98,6 +98,9 @@ enum HotKeyAction: String, CaseIterable, Identifiable {
         case .captureOCR: return "识别文字 (OCR)"
         case .captureScreen: return "全屏截图"
         case .pinClipboard: return "贴图剪贴板"
+        case .translateSelection: return "划词翻译"
+        case .translateCapture: return "截图翻译"
+        case .translateInput: return "输入翻译"
         }
     }
 
@@ -107,6 +110,9 @@ enum HotKeyAction: String, CaseIterable, Identifiable {
         case .captureOCR: return "text.viewfinder"
         case .captureScreen: return "macwindow"
         case .pinClipboard: return "pin"
+        case .translateSelection: return "character.cursor.ibeam"
+        case .translateCapture: return "viewfinder"
+        case .translateInput: return "translate"
         }
     }
 
@@ -117,6 +123,9 @@ enum HotKeyAction: String, CaseIterable, Identifiable {
         case .captureOCR: return HotKey(keyCode: UInt32(kVK_ANSI_T), modifiers: mods)
         case .captureScreen: return HotKey(keyCode: UInt32(kVK_ANSI_F), modifiers: mods)
         case .pinClipboard: return HotKey(keyCode: UInt32(kVK_ANSI_P), modifiers: mods)
+        case .translateSelection: return HotKey(keyCode: UInt32(kVK_ANSI_D), modifiers: mods)
+        case .translateCapture: return HotKey(keyCode: UInt32(kVK_ANSI_S), modifiers: mods)
+        case .translateInput: return HotKey(keyCode: UInt32(kVK_ANSI_I), modifiers: mods)
         }
     }
 }
@@ -165,6 +174,10 @@ final class Settings: ObservableObject {
     @Published var ocrKeepLineBreaks: Bool { didSet { d.set(ocrKeepLineBreaks, forKey: "ocrKeepLineBreaks") } }
     @Published var ocrLanguages: [String] { didSet { d.set(ocrLanguages, forKey: "ocrLanguages") } }
     @Published var keepHistory: Bool { didSet { d.set(keepHistory, forKey: "keepHistory") } }
+    @Published var primaryLanguage: String { didSet { d.set(primaryLanguage, forKey: "primaryLanguage") } }
+    @Published var secondaryLanguage: String { didSet { d.set(secondaryLanguage, forKey: "secondaryLanguage") } }
+    @Published var appleTranslateEnabled: Bool { didSet { d.set(appleTranslateEnabled, forKey: "appleTranslateEnabled") } }
+    @Published var llm: LLMConfig { didSet { d.set(try? JSONEncoder().encode(llm), forKey: "llm") } }
     @Published var launchAtLogin: Bool {
         didSet {
             do {
@@ -205,6 +218,10 @@ final class Settings: ObservableObject {
         ocrKeepLineBreaks = d.object(forKey: "ocrKeepLineBreaks") as? Bool ?? true
         ocrLanguages = d.stringArray(forKey: "ocrLanguages") ?? ["zh-Hans", "zh-Hant", "en-US", "ja-JP"]
         keepHistory = d.object(forKey: "keepHistory") as? Bool ?? true
+        primaryLanguage = d.string(forKey: "primaryLanguage") ?? "zh-Hans"
+        secondaryLanguage = d.string(forKey: "secondaryLanguage") ?? "en"
+        appleTranslateEnabled = d.object(forKey: "appleTranslateEnabled") as? Bool ?? true
+        llm = d.data(forKey: "llm").flatMap { try? JSONDecoder().decode(LLMConfig.self, from: $0) } ?? LLMConfig()
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 }

@@ -2,11 +2,11 @@ import AppKit
 import Combine
 import SwiftUI
 
-enum CaptureMode { case area, ocr }
+enum CaptureMode { case area, ocr, translate }
 
 /// What the user decided to do with a finished selection.
 enum CaptureOutcome {
-    case copy, save, saveAs, pin, ocr
+    case copy, save, saveAs, pin, ocr, translate
 }
 
 /// The product of a finished selection.
@@ -679,6 +679,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     private func selectionCompleted() {
         if mode == .ocr { finish(.ocr); return }
+        if mode == .translate { finish(.translate); return }
         switch Settings.shared.afterCapture {
         case .copy: finish(.copy)
         case .save: finish(.save)
@@ -813,6 +814,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             case "c": if selection != nil { finish(.copy) }
             case "s": if selection != nil { finish(.save) }
             case "t": if selection != nil { finish(.ocr) }
+            case "d": if selection != nil { finish(.translate) }
             case "p": if selection != nil { finish(.pin) }
             case "z": undo()
             case "a": selectAll()
@@ -1000,6 +1002,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         case .saveAs: finish(.saveAs)
         case .pin: finish(.pin)
         case .ocr: finish(.ocr)
+        case .translate: finish(.translate)
         }
         window?.makeFirstResponder(self)
     }
