@@ -216,7 +216,8 @@ final class Settings: ObservableObject {
         ocrAutoCopy = d.object(forKey: "ocrAutoCopy") as? Bool ?? true
         ocrShowWindow = d.object(forKey: "ocrShowWindow") as? Bool ?? true
         ocrKeepLineBreaks = d.object(forKey: "ocrKeepLineBreaks") as? Bool ?? true
-        ocrLanguages = d.stringArray(forKey: "ocrLanguages") ?? ["zh-Hans", "zh-Hant", "en-US", "ja-JP"]
+        // Empty = let Vision detect the language, which reads both CJK and Latin text best.
+        ocrLanguages = d.stringArray(forKey: "ocrLanguages") ?? []
         keepHistory = d.object(forKey: "keepHistory") as? Bool ?? true
         primaryLanguage = d.string(forKey: "primaryLanguage") ?? "zh-Hans"
         secondaryLanguage = d.string(forKey: "secondaryLanguage") ?? "en"

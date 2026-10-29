@@ -214,7 +214,7 @@ private struct OCRSettings: View {
             } header: {
                 Text("识别语言")
             } footer: {
-                Text("使用 macOS 内置的 Vision 引擎，完全离线。全部不选时自动检测语言。")
+                Text("使用 macOS 内置的 Vision 引擎，完全离线。全部不选时自动检测语言（推荐）；仅在识别不准时手动指定。")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

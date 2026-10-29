@@ -90,28 +90,7 @@ struct VisionOCREngine: OCREngine {
         }
     }
 
-    /// Vision reads Latin text noticeably worse when a CJK language comes first, but drops CJK text
-    /// entirely when it doesn't. So with a mixed language list we also run a Latin-first pass in
-    /// parallel and prefer it whenever the image turns out to contain no CJK text.
     static func recognizeSync(_ image: CGImage, languages: [String]) throws -> OCRResult {
-        let isCJK = { (code: String) in ["zh", "ja", "ko"].contains { code.hasPrefix($0) } }
-        let latinFirst = languages.filter { !isCJK($0) } + languages.filter(isCJK)
-        guard let first = languages.first, isCJK(first), latinFirst.first.map(isCJK) == false else {
-            return try perform(image, languages: languages)
-        }
-        var results: [Result<OCRResult, Error>?] = [nil, nil]
-        let lock = NSLock()
-        DispatchQueue.concurrentPerform(iterations: 2) { i in
-            let r = Result { try perform(image, languages: i == 0 ? languages : latinFirst) }
-            lock.withLock { results[i] = r }
-        }
-        let primary = try results[0]!.get()
-        let hasCJK = primary.lines.contains { $0.text.contains(where: \.isCJK) }
-        if !hasCJK, let latin = try? results[1]?.get(), !latin.lines.isEmpty { return latin }
-        return primary
-    }
-
-    private static func perform(_ image: CGImage, languages: [String]) throws -> OCRResult {
         let textRequest = VNRecognizeTextRequest()
         textRequest.recognitionLevel = .accurate
         textRequest.usesLanguageCorrection = true
