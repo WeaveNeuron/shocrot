@@ -203,7 +203,8 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         case .pin:
             PinWindow.pin(result.image, scale: result.scale, at: result.globalRect)
         case .translate:
-            translate(image: result.rawImage, historyID: historyID)
+            translate(image: result.rawImage, historyID: historyID,
+                      near: CGPoint(x: result.globalRect.minX + 40, y: result.globalRect.minY))
         case .ocr:
             recognize(image: result.rawImage, scale: result.scale, historyID: historyID)
         }
@@ -233,14 +234,14 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
 
     // MARK: - Translate
 
-    func translate(image: CGImage, historyID: UUID? = nil) {
+    func translate(image: CGImage, historyID: UUID? = nil, near point: CGPoint? = nil) {
         Task { @MainActor in
             do {
                 let result = try await OCRService.recognize(image, languages: Settings.shared.ocrLanguages)
                 let text = result.text(keepLineBreaks: false)
                 guard !text.isEmpty else { Feedback.toast("没有识别到文字", symbol: "exclamationmark.triangle.fill"); return }
                 if let historyID { HistoryStore.shared.setText(text, for: historyID) }
-                TranslatePanel.show(text: text)
+                TranslatePanel.show(text: text, near: point)
             } catch {
                 Feedback.error(error)
             }
