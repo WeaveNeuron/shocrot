@@ -103,9 +103,9 @@ struct PermissionRow: View {
                 Label("已开启", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green).font(.callout)
             case .needsRelaunch:
-                Button("重新启动", action: Permission.relaunch).buttonStyle(.borderedProminent)
+                Button("重新启动", action: Permission.relaunch).buttonStyle(.glassProminent)
             case .missing:
-                Button("去开启", action: permission.request)
+                Button("去开启", action: permission.request).buttonStyle(.glass)
             }
         }
         .onReceive(timer) { _ in status = permission.status }

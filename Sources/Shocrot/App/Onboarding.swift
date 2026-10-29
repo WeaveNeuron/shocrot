@@ -33,8 +33,9 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
-                .frame(width: 64, height: 64)
-                .padding(.top, 28)
+                .frame(width: 72, height: 72)
+                .shadow(color: Color.accentColor.opacity(0.45), radius: 18, y: 6)
+                .padding(.top, 30)
             Text("欢迎使用 Shocrot").font(.system(size: 22, weight: .semibold)).padding(.top, 8)
             Text("一个按键，截图、标注、贴图、识别与翻译。").foregroundStyle(.secondary).padding(.top, 4)
 
@@ -47,9 +48,7 @@ struct OnboardingView: View {
                                 .frame(width: 18)
                             Text(action.title).lineLimit(1)
                             Spacer(minLength: 4)
-                            Text(Settings.shared.hotKeys[action]?.displayString ?? "—")
-                                .font(.system(size: 12, weight: .medium, design: .rounded))
-                                .foregroundStyle(.secondary)
+                            KeyCaps(Settings.shared.hotKeys[action]?.displayString ?? "—")
                         }
                     }
                 }
@@ -73,6 +72,7 @@ struct OnboardingView: View {
                     OnboardingWindow.close()
                 }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(.glassProminent)
                 .controlSize(.large)
             }
             .padding(.top, 20)
@@ -81,6 +81,12 @@ struct OnboardingView: View {
         .padding(.horizontal, 28)
         .frame(width: 540)
         .fixedSize(horizontal: false, vertical: true)
+        .background(alignment: .top) {
+            // A soft glow behind the icon gives the window depth without decoration.
+            RadialGradient(colors: [Color.accentColor.opacity(0.22), .clear], center: .top, startRadius: 0, endRadius: 320)
+                .frame(height: 320)
+                .ignoresSafeArea()
+        }
         .onReceive(timer) { _ in canCapture = ScreenCapturer.hasPermission }
     }
 
@@ -90,7 +96,31 @@ struct OnboardingView: View {
             content()
                 .padding(14)
                 .frame(maxWidth: .infinity)
-                .background(.background.secondary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+                .background(.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.primary.opacity(0.07)))
+        }
+    }
+}
+
+/// A shortcut such as "⌥⇧A" drawn as individual key caps.
+struct KeyCaps: View {
+    let keys: [String]
+    init(_ shortcut: String) { keys = shortcut.map(String.init) }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
+                Text(key)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 18, minHeight: 18)
+                    .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .overlay(alignment: .bottom) {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .strokeBorder(.primary.opacity(0.10))
+                    }
+                    .shadow(color: .black.opacity(0.25), radius: 0, y: 1)
+            }
         }
     }
 }
