@@ -21,6 +21,32 @@ final class TranslatePanel: NSPanel {
         NotificationCenter.default.post(name: .focusTranslateInput, object: nil)
     }
 
+    /// Opens the panel immediately in a "recognizing" state; follow up with `show(text:near:)`.
+    @MainActor
+    static func showRecognizing(near point: CGPoint?) {
+        let panel = shared ?? TranslatePanel()
+        shared = panel
+        panel.model.clear()
+        panel.model.isRecognizing = true
+        if !panel.isVisible || !panel.model.pinned { panel.place(near: point) }
+        panel.orderFrontRegardless()
+        panel.watchOutsideClicks()
+    }
+
+    /// Ends a recognizing state that produced no text.
+    @MainActor
+    static func cancelRecognizing() {
+        guard let panel = shared, panel.model.isRecognizing else { return }
+        panel.model.isRecognizing = false
+        panel.dismissIfUnpinned()
+    }
+
+    /// Gets an unpinned panel out of the way, e.g. before a new screenshot.
+    @MainActor
+    static func dismissUnpinned() {
+        shared?.dismissIfUnpinned()
+    }
+
     private init() {
         super.init(contentRect: CGRect(x: 0, y: 0, width: 420, height: 200),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)

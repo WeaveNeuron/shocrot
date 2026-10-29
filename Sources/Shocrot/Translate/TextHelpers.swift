@@ -79,9 +79,11 @@ enum SelectionReader {
     }
 
     private static func viaAccessibility() -> String? {
-        let system = AXUIElementCreateSystemWide()
+        // Ask the frontmost app directly: the system-wide focus query fails on recent macOS.
+        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
         var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+        guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXFocusedUIElementAttribute as CFString,
+                                            &focused) == .success,
               let element = focused else { return nil }
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element as! AXUIElement, kAXSelectedTextAttribute as CFString, &value) == .success

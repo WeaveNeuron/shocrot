@@ -124,7 +124,7 @@ enum HotKeyAction: String, CaseIterable, Identifiable {
         case .captureScreen: return HotKey(keyCode: UInt32(kVK_ANSI_F), modifiers: mods)
         case .pinClipboard: return HotKey(keyCode: UInt32(kVK_ANSI_P), modifiers: mods)
         case .translateSelection: return HotKey(keyCode: UInt32(kVK_ANSI_D), modifiers: mods)
-        case .translateCapture: return HotKey(keyCode: UInt32(kVK_ANSI_S), modifiers: mods)
+        case .translateCapture: return HotKey(keyCode: UInt32(kVK_ANSI_X), modifiers: mods)  // ⌥⇧S is taken by Easydict and Bob
         case .translateInput: return HotKey(keyCode: UInt32(kVK_ANSI_I), modifiers: mods)
         }
     }

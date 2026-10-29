@@ -71,7 +71,15 @@ struct TranslateView: View {
     private var inputCard: some View {
         VStack(alignment: .leading, spacing: 4) {
             ZStack(alignment: .topLeading) {
-                if model.input.isEmpty {
+                if model.isRecognizing {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("正在识别文字…")
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 5)
+                    .padding(.top, 1)
+                } else if model.input.isEmpty {
                     Text("输入文字，↩ 翻译，⇧↩ 换行")
                         .foregroundStyle(.tertiary)
                         .padding(.leading, 5)

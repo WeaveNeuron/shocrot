@@ -16,6 +16,8 @@ final class TranslateModel: ObservableObject {
     @Published var source: Language?  // nil = detect
     @Published var target: Language?  // nil = automatic
     @Published var pinned = false
+    /// Screenshot translation shows the panel right away while OCR is still running.
+    @Published var isRecognizing = false
     @Published private(set) var detected: Language?
     @Published private(set) var resolvedTarget: Language?
     @Published private(set) var results: [ServiceResult] = []
@@ -55,6 +57,7 @@ final class TranslateModel: ObservableObject {
     }
 
     func query(_ text: String) {
+        isRecognizing = false
         input = text
         translate()
     }

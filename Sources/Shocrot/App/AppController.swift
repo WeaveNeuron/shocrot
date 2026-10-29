@@ -151,6 +151,9 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     func startCapture(_ mode: CaptureMode) {
         guard !CaptureSession.isActive else { return }
         guard ScreenCapturer.canCapture else { OnboardingWindow.show(); return }
+        // Keep our own transient windows out of the frozen screen.
+        TranslatePanel.dismissUnpinned()
+        CapturePreview.close(animated: false)
         Task { @MainActor in
             do {
                 let snapshots = try await ScreenCapturer.captureAllScreens()
@@ -235,14 +238,20 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     // MARK: - Translate
 
     func translate(image: CGImage, historyID: UUID? = nil, near point: CGPoint? = nil) {
+        TranslatePanel.showRecognizing(near: point)
         Task { @MainActor in
             do {
                 let result = try await OCRService.recognize(image, languages: Settings.shared.ocrLanguages)
                 let text = result.text(keepLineBreaks: false)
-                guard !text.isEmpty else { Feedback.toast("没有识别到文字", symbol: "exclamationmark.triangle.fill"); return }
+                guard !text.isEmpty else {
+                    TranslatePanel.cancelRecognizing()
+                    Feedback.toast("没有识别到文字", symbol: "exclamationmark.triangle.fill")
+                    return
+                }
                 if let historyID { HistoryStore.shared.setText(text, for: historyID) }
                 TranslatePanel.show(text: text, near: point)
             } catch {
+                TranslatePanel.cancelRecognizing()
                 Feedback.error(error)
             }
         }
