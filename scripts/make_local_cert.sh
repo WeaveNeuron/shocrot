@@ -4,7 +4,7 @@
 # Remove it any time in Keychain Access.
 set -euo pipefail
 NAME="Shocrot Local Signing"
-if security find-certificate -c "$NAME" >/dev/null 2>&1; then echo "“$NAME” already exists."; exit 0; fi
+if security find-certificate -c "$NAME" >/dev/null 2>&1; then echo "“${NAME}” already exists."; exit 0; fi
 
 DIR=$(mktemp -d)
 trap 'rm -rf "$DIR"' EXIT
@@ -28,4 +28,4 @@ openssl pkcs12 -export -legacy -inkey "$DIR/key.pem" -in "$DIR/cert.pem" -name "
   || openssl pkcs12 -export -inkey "$DIR/key.pem" -in "$DIR/cert.pem" -name "$NAME" \
        -passout "pass:$PASS" -out "$DIR/id.p12"
 security import "$DIR/id.p12" -k "$HOME/Library/Keychains/login.keychain-db" -P "$PASS" -T /usr/bin/codesign
-echo "Created “$NAME”. Run scripts/build_app.sh --install, then grant permissions once more."
+echo "Created “${NAME}”. Run scripts/build_app.sh --install, then grant permissions once more."
