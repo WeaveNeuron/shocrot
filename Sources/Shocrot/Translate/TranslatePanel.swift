@@ -21,6 +21,12 @@ final class TranslatePanel: NSPanel {
         NotificationCenter.default.post(name: .focusTranslateInput, object: nil)
     }
 
+    /// Builds the panel ahead of time so the first translation opens as fast as later ones.
+    @MainActor
+    static func prepare() {
+        if shared == nil { shared = TranslatePanel() }
+    }
+
     /// Opens the panel immediately in a "recognizing" state; follow up with `show(text:near:)`.
     @MainActor
     static func showRecognizing(near point: CGPoint?) {

@@ -6,6 +6,7 @@ struct TranslateView: View {
     @ObservedObject var model: TranslateModel
     @ObservedObject private var speaker = Speaker.shared
     @FocusState private var inputFocused: Bool
+    @State private var inputSelection: TextSelection?
     @State private var resultsHeight: CGFloat = 0
     @State private var downloadRequest: TranslationSession.Configuration?
 
@@ -39,7 +40,11 @@ struct TranslateView: View {
             model.translate()
         }
         .animation(.easeOut(duration: 0.18), value: model.results.count)
-        .onReceive(NotificationCenter.default.publisher(for: .focusTranslateInput)) { _ in inputFocused = true }
+        .onReceive(NotificationCenter.default.publisher(for: .focusTranslateInput)) { _ in
+            // New text: caret at the end rather than a stale selection from the previous query.
+            inputSelection = TextSelection(insertionPoint: model.input.endIndex)
+            inputFocused = true
+        }
     }
 
     // MARK: Header
@@ -93,7 +98,7 @@ struct TranslateView: View {
                     .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 140, alignment: .topLeading)
                     .fixedSize(horizontal: false, vertical: true)
                     .hidden()
-                TextEditor(text: $model.input)
+                TextEditor(text: $model.input, selection: $inputSelection)
                     .font(.system(size: 14))
                     .scrollContentBackground(.hidden)
                     .focused($inputFocused)

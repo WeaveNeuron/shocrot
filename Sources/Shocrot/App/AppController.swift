@@ -22,6 +22,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         NSApp.mainMenu = makeMainMenu()
         registerHotKeys()
         VisionOCREngine.warmUp(languages: Settings.shared.ocrLanguages)
+        TranslatePanel.prepare()
         NotificationCenter.default.addObserver(forName: .hotKeysChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.registerHotKeys() }
         }
