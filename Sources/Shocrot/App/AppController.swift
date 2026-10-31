@@ -319,10 +319,12 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     func pinClipboard() {
-        guard let (img, scale) = clipboardImage() else {
-            Feedback.toast("剪贴板中没有图片", symbol: "exclamationmark.triangle.fill")
-            return
+        if let (img, scale) = clipboardImage() { return PinWindow.pin(img, scale: scale) }
+        // Copied text is pinned as a note, so a snippet can stay in view while you type elsewhere.
+        if let text = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !text.isEmpty, let img = ImageOutput.textImage(text, scale: NSScreen.main?.backingScaleFactor ?? 2) {
+            return PinWindow.pin(img, scale: NSScreen.main?.backingScaleFactor ?? 2)
         }
-        PinWindow.pin(img, scale: scale)
+        Feedback.toast("剪贴板中没有图片或文字", symbol: "exclamationmark.triangle.fill")
     }
 }

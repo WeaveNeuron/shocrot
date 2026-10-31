@@ -24,6 +24,32 @@ enum ImageOutput {
         pb.writeObjects([item])
     }
 
+    /// Renders text as a light note card (for pinning copied text). Long text wraps at a readable width.
+    static func textImage(_ text: String, scale: CGFloat, maxWidth: CGFloat = 520) -> CGImage? {
+        let font = NSFont.systemFont(ofSize: 14)
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = 3
+        let string = NSAttributedString(string: String(text.prefix(4000)), attributes: [
+            .font: font, .foregroundColor: NSColor(white: 0.12, alpha: 1), .paragraphStyle: style,
+        ])
+        let padding: CGFloat = 14
+        let bounds = string.boundingRect(with: CGSize(width: maxWidth, height: 4000),
+                                         options: [.usesLineFragmentOrigin, .usesFontLeading])
+        let size = CGSize(width: ceil(bounds.width) + padding * 2, height: min(ceil(bounds.height), 4000) + padding * 2)
+        guard let ctx = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale),
+                                  bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.scaleBy(x: scale, y: scale)
+        ctx.setFillColor(CGColor(red: 1, green: 0.99, blue: 0.95, alpha: 1))
+        ctx.fill(CGRect(origin: .zero, size: size))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+        string.draw(with: CGRect(x: padding, y: padding, width: maxWidth, height: size.height - padding * 2),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading])
+        NSGraphicsContext.restoreGraphicsState()
+        return ctx.makeImage()
+    }
+
     static func copyText(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)

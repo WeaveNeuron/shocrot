@@ -32,3 +32,18 @@ struct LanguageTests {
         #expect(Language.named("zh-Hans").name == "简体中文")
     }
 }
+
+@Suite("Pinned text")
+struct PinnedTextTests {
+    @Test func shortTextMakesACompactCard() throws {
+        let image = try #require(ImageOutput.textImage("Hello", scale: 2))
+        #expect(image.width < 200 && image.height < 120)
+    }
+
+    @Test func longTextWrapsAtTheMaximumWidth() throws {
+        let text = String(repeating: "Shocrot pins copied text as a note. ", count: 40)
+        let image = try #require(ImageOutput.textImage(text, scale: 1, maxWidth: 400))
+        #expect(image.width <= 400 + 28)
+        #expect(image.height > 100)
+    }
+}

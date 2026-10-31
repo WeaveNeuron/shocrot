@@ -40,6 +40,10 @@ struct TranslateView: View {
             model.translate()
         }
         .animation(.easeOut(duration: 0.18), value: model.results.count)
+        .background {
+            // ⇧⌘C copies the first finished translation, like the OCR window's copy shortcut.
+            Button("") { copyFirstResult() }.keyboardShortcut("c", modifiers: [.command, .shift]).hidden()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .focusTranslateInput)) { _ in
             // New text: caret at the end rather than a stale selection from the previous query.
             inputSelection = TextSelection(insertionPoint: model.input.endIndex)
@@ -60,6 +64,13 @@ struct TranslateView: View {
             IconButton(symbol: "xmark", help: "关闭 (Esc)") { NSApp.keyWindow?.close() }
         }
         .frame(height: 22)
+    }
+
+    private func copyFirstResult() {
+        guard let text = model.results.first(where: { $0.error == nil && !$0.isLoading && !$0.text.isEmpty })?.text
+        else { return }
+        ImageOutput.copyText(text)
+        Feedback.toast("已复制译文")
     }
 
     private func requestDownload() {
@@ -85,7 +96,7 @@ struct TranslateView: View {
                     .padding(.leading, 5)
                     .padding(.top, 1)
                 } else if model.input.isEmpty {
-                    Text("输入文字，↩ 翻译，⇧↩ 换行")
+                    Text("输入文字，↩ 翻译，⇧↩ 换行，⇧⌘C 复制译文")
                         .foregroundStyle(.tertiary)
                         .padding(.leading, 5)
                         .padding(.top, 1)
