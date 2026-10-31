@@ -136,5 +136,8 @@ struct ToolButton: View {
         .opacity(enabled ? 1 : 0.35)
         .onHover { hovering = $0 }
         .help(help)
+        // VoiceOver: the tool's name ("箭头"), not the symbol's description ("右上对角箭头").
+        .accessibilityLabel(help.components(separatedBy: " (").first ?? help)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

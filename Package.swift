@@ -14,6 +14,12 @@ let package = Package(
                 .linkedFramework("Vision"),
                 .linkedFramework("Carbon"),
             ]
-        )
+        ),
+        .testTarget(
+            name: "ShocrotTests",
+            dependencies: ["Shocrot"],
+            path: "Tests/ShocrotTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )

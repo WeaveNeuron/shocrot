@@ -308,6 +308,7 @@ struct IconButton: View {
         .opacity(isEnabled ? 1 : 0.4)
         .onHover { hovering = $0 }
         .help(help)
+        .accessibilityLabel(help)
     }
 }
 

@@ -105,7 +105,14 @@ struct OnboardingView: View {
 /// A shortcut such as "⌥⇧A" drawn as individual key caps.
 struct KeyCaps: View {
     let keys: [String]
-    init(_ shortcut: String) { keys = shortcut.map(String.init) }
+    init(_ shortcut: String) { keys = Self.parts(of: shortcut) }
+
+    /// "⌥⇧F12" → ["⌥", "⇧", "F12"]: one cap per modifier, the key name stays whole.
+    static func parts(of shortcut: String) -> [String] {
+        let modifiers = shortcut.prefix { "⌃⌥⇧⌘".contains($0) }
+        let key = shortcut.dropFirst(modifiers.count)
+        return modifiers.map(String.init) + (key.isEmpty ? [] : [String(key)])
+    }
 
     var body: some View {
         HStack(spacing: 3) {
@@ -114,6 +121,7 @@ struct KeyCaps: View {
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(.secondary)
                     .frame(minWidth: 18, minHeight: 18)
+                    .padding(.horizontal, key.count > 1 ? 3 : 0)
                     .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
                     .overlay(alignment: .bottom) {
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
