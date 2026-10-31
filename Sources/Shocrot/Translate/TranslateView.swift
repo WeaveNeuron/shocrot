@@ -134,8 +134,12 @@ struct TranslateView: View {
                 IconButton(symbol: "xmark.circle.fill", help: "清空") { model.clear(); inputFocused = true }
                     .disabled(model.input.isEmpty)
             }
+            .padding(.leading, 5)
+            .padding(.trailing, 3)
         }
-        .padding(8)
+        // The editor insets its text by 5 pt, so this lines the text up with the result cards (10 pt).
+        .padding(.vertical, 8)
+        .padding(.horizontal, 5)
         .card()
     }
 
