@@ -102,7 +102,7 @@ private struct PreviewCard: View {
 
     private var thumbSize: CGSize {
         let s = model.thumbnail.size
-        let fit = min(236 / max(s.width, 1), 148 / max(s.height, 1), 1)
+        let fit = min(252 / max(s.width, 1), 148 / max(s.height, 1), 1)
         return CGSize(width: max(s.width * fit, 120), height: max(s.height * fit, 60))
     }
 
@@ -169,12 +169,16 @@ private struct PreviewCard: View {
                     AppController.shared.recognize(image: model.image, scale: model.scale)
                     model.onClose()
                 }
+                PreviewButton(symbol: "translate", help: "翻译") {
+                    AppController.shared.translate(image: model.image)
+                    model.onClose()
+                }
             }
             .padding(.leading, 10)
             .padding(.trailing, 6)
             .frame(height: 34)
         }
-        .frame(width: 256)
+        .frame(width: 272)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.primary.opacity(0.1), lineWidth: 0.5))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -214,6 +218,7 @@ private struct PreviewButton: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(help)
+        .accessibilityLabel(help)
     }
 }
 

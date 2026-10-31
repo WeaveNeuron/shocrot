@@ -62,6 +62,13 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        // Without screen recording nothing but selection translation works, so lead with the fix.
+        switch Permission.screenRecording.status {
+        case .granted: break
+        case .needsRelaunch: addItem(to: menu, "重新启动以启用屏幕录制", "arrow.clockwise", #selector(relaunch))
+        case .missing: addItem(to: menu, "开启屏幕录制权限…", "exclamationmark.triangle.fill", #selector(showOnboarding))
+        }
+        if menu.numberOfItems > 0 { menu.addItem(.separator()) }
         for action in HotKeyAction.allCases {
             if action == .translateSelection { menu.addItem(.separator()) }
             let item = NSMenuItem(title: action.title, action: #selector(menuAction(_:)), keyEquivalent: "")
@@ -80,13 +87,8 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         menu.addItem(.separator())
         addItem(to: menu, "历史记录…", "clock.arrow.circlepath", #selector(showHistory))
         addItem(to: menu, "打开截图文件夹", "folder", #selector(openFolder))
-        addItem(to: menu, "关闭全部贴图", "pin.slash", #selector(closePins))
+        if PinWindow.hasOpen { addItem(to: menu, "关闭全部贴图", "pin.slash", #selector(closePins)) }
         menu.addItem(.separator())
-        switch Permission.screenRecording.status {
-        case .granted: break
-        case .needsRelaunch: addItem(to: menu, "重新启动以启用屏幕录制", "arrow.clockwise", #selector(relaunch))
-        case .missing: addItem(to: menu, "开启屏幕录制权限…", "exclamationmark.triangle", #selector(showOnboarding))
-        }
         addItem(to: menu, "设置…", "gearshape", #selector(showSettings), key: ",")
         addItem(to: menu, "退出 Shocrot", "power", #selector(quit), key: "q")
     }

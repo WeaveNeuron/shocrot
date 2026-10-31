@@ -20,6 +20,7 @@ final class PinWindow: NSPanel {
         pin.makeKey()
     }
 
+    static var hasOpen: Bool { !open.isEmpty }
     static func closeAll() { open.forEach { $0.close() } }
 
     private init(image: CGImage, scale: CGFloat, rect: CGRect?) {

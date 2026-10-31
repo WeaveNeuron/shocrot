@@ -203,9 +203,10 @@ struct OCRView: View {
                         .frame(minWidth: 64)
                 }
                 .keyboardShortcut("c", modifiers: [.command, .shift])
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(model.text.isEmpty)
             }
+            .buttonStyle(.glass)
             .controlSize(.regular)
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
