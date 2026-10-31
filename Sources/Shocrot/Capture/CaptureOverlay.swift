@@ -6,7 +6,7 @@ enum CaptureMode { case area, ocr, translate }
 
 /// What the user decided to do with a finished selection.
 enum CaptureOutcome {
-    case copy, save, saveAs, pin, ocr, translate
+    case copy, save, saveAs, pin, ocr, translate, scroll
 }
 
 /// The product of a finished selection.
@@ -816,6 +816,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             case "t": if selection != nil { finish(.ocr) }
             case "d": if selection != nil { finish(.translate) }
             case "p": if selection != nil { finish(.pin) }
+            case "l": if selection != nil { finish(.scroll) }
             case "z": undo()
             case "a": selectAll()
             default: break
@@ -1003,6 +1004,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         case .pin: finish(.pin)
         case .ocr: finish(.ocr)
         case .translate: finish(.translate)
+        case .scroll: finish(.scroll)
         }
         window?.makeFirstResponder(self)
     }

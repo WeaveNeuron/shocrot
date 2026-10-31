@@ -158,7 +158,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     // MARK: - Capture
 
     func startCapture(_ mode: CaptureMode) {
-        guard !CaptureSession.isActive else { return }
+        guard !CaptureSession.isActive, !ScrollCapture.isActive else { return }
         guard ScreenCapturer.canCapture else { OnboardingWindow.show(); return }
         // Keep our own transient windows out of the frozen screen.
         TranslatePanel.dismissUnpinned()
@@ -196,9 +196,18 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func handle(_ outcome: CaptureOutcome, result: CaptureResult) {
+        let screen = NSScreen.screens.first { $0.frame.contains(CGPoint(x: result.globalRect.midX, y: result.globalRect.midY)) }
+        if outcome == .scroll, let screen {
+            ScrollCapture.start(rect: result.globalRect, on: screen) { image, scale in
+                Feedback.shutter()
+                HistoryStore.shared.add(image, scale: scale)
+                ImageOutput.copy(image, scale: scale)
+                CapturePreview.show(image: image, scale: scale, status: "已复制长截图", savedURL: nil, on: screen)
+            }
+            return
+        }
         if outcome != .ocr { Feedback.shutter() }
         let historyID = HistoryStore.shared.add(result.image, scale: result.scale)
-        let screen = NSScreen.screens.first { $0.frame.contains(CGPoint(x: result.globalRect.midX, y: result.globalRect.midY)) }
         switch outcome {
         case .copy:
             ImageOutput.copy(result.image, scale: result.scale)
@@ -219,6 +228,8 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                       near: CGPoint(x: result.globalRect.minX + 40, y: result.globalRect.minY))
         case .ocr:
             recognize(image: result.rawImage, scale: result.scale, historyID: historyID)
+        case .scroll:
+            break
         }
     }
 
