@@ -28,7 +28,7 @@ private func makePage(width: Int, height: Int, seed: UInt64 = 7) -> CGContext {
 }
 
 /// What the screen shows at a scroll offset: an optional fixed bar on top and at the bottom, page content between.
-private func frame(of page: CGImage, offset: Int, height: Int, header: Int, footer: Int) -> CGImage {
+private func frame(of page: CGImage, offset: Int, height: Int, header: Int, footer: Int, caret: Bool = false) -> CGImage {
     let w = page.width
     let ctx = CGContext(data: nil, width: w, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                         space: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -46,6 +46,10 @@ private func frame(of page: CGImage, offset: Int, height: Int, header: Int, foot
         ctx.fill(CGRect(x: 0, y: 0, width: w, height: footer))
         ctx.setFillColor(CGColor(gray: 0.3, alpha: 1))
         ctx.fill(CGRect(x: w - 80, y: 5, width: 70, height: footer - 10))
+    }
+    if caret { // a text cursor in the middle of the view
+        ctx.setFillColor(CGColor(gray: 0, alpha: 1))
+        ctx.fill(CGRect(x: w / 2, y: height / 2, width: 2, height: 16))
     }
     return ctx.makeImage()!
 }
@@ -90,6 +94,20 @@ struct ScrollStitcherTests {
         // The page between the bars must be continuous and exact.
         let expected = frame(of: page, offset: 0, height: header + 500 + content + footer, header: header, footer: footer)
         let same = pixels(image) == pixels(expected)
+        #expect(same)
+    }
+
+    @Test func blinkingCaretIsNotMistakenForScrolling() {
+        var stitcher = ScrollStitcher()
+        let header = 44
+        let f = { (offset: Int, caret: Bool) in frame(of: page, offset: offset, height: 400, header: header, footer: 0, caret: caret) }
+        #expect(stitcher.add(f(0, false)) == .started)
+        #expect(stitcher.add(f(0, true)) == .unchanged)
+        #expect(stitcher.add(f(0, false)) == .unchanged)
+        #expect(stitcher.add(f(150, false)) == .appended(150))
+        // The fixed header must still have been measured on the real scroll.
+        let image = stitcher.makeImage()!
+        let same = pixels(image) == pixels(frame(of: page, offset: 0, height: 550, header: header, footer: 0))
         #expect(same)
     }
 

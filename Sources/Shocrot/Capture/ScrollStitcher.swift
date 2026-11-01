@@ -50,10 +50,16 @@ struct ScrollStitcher {
         if !edgesKnown {
             header = min(topSame, h / 3)
             footer = min((0..<h).reversed().prefix { sig.equal($0, prev, $0) }.count, h / 3)
-            edgesKnown = true
         }
 
-        guard let d = offset(of: sig, from: prev) else { return .lost }
+        guard let d = offset(of: sig, from: prev) else {
+            // Edges are only trusted once measured on a real scroll.
+            if !edgesKnown { header = 0; footer = 0 }
+            // A blinking caret, spinner or video changes a few rows without any scrolling.
+            let changed = (0..<h).count { !sig.equal($0, prev, $0) }
+            return changed <= max(4, h / 12) ? .unchanged : .lost
+        }
+        edgesKnown = true
         let bottom = h - footer
         guard let slice = image.copyRows(bottom - d ..< bottom) else { return .lost }
         slices.append(slice)
