@@ -55,9 +55,10 @@ struct ScrollStitcher {
         guard let d = offset(of: sig, from: prev) else {
             // Edges are only trusted once measured on a real scroll.
             if !edgesKnown { header = 0; footer = 0 }
-            // A blinking caret, spinner or video changes a few rows without any scrolling.
+            // A caret, spinner, hover effect or notification changes part of the area without scrolling;
+            // only report a lost frame when most of it changed, as when the content jumped too far.
             let changed = (0..<h).count { !sig.equal($0, prev, $0) }
-            return changed <= max(4, h / 12) ? .unchanged : .lost
+            return changed <= h / 2 ? .unchanged : .lost
         }
         edgesKnown = true
         let bottom = h - footer
@@ -107,16 +108,23 @@ struct ScrollStitcher {
             for p in matches where p > y { votes[p - y, default: 0] += 1 }
         }
 
-        // Best-voted offsets first; accept the first that holds up row by row.
-        for (d, _) in votes.sorted(by: { $0.value > $1.value }).prefix(5) {
+        // Score the best-voted offsets row by row and keep the one that explains the most rows.
+        func agreement(_ d: Int) -> Double {
             var checked = 0, matched = 0
             for y in band.lowerBound ..< band.upperBound - d where sig.informative(y) {
                 checked += 1
                 if sig.equal(y, prev, y + d) { matched += 1 }
             }
-            if checked >= 4 && Double(matched) >= Double(checked) * 0.9 { return d }
+            return checked >= 4 ? Double(matched) / Double(checked) : 0
         }
-        return nil
+        let candidates = votes.sorted { $0.value > $1.value }.prefix(12).map(\.key)
+        guard let best = candidates.max(by: { agreement($0) < agreement($1) }) else { return nil }
+        let score = agreement(best)
+        // Wrong offsets match almost nothing; 60% leaves room for overlays that don't scroll (a notification
+        // banner, a floating button). The offset must also beat "nothing moved", which rules out the
+        // near-duplicate neighbouring rows inside a line of text when only a caret blinked.
+        guard score >= 0.6, score > agreement(0) + 0.15 else { return nil }
+        return best
     }
 }
 

@@ -46,4 +46,26 @@ final class HotKeyCenter {
         handlers[id] = handler
         return true
     }
+
+    private var nextTemporaryID: UInt32 = 1000
+    private var temporaryIDs: [EventHotKeyRef: UInt32] = [:]
+
+    /// A short-lived shortcut (e.g. ↩ / Esc while a scrolling capture runs). Unlike a monitor, it consumes the
+    /// key, so the app underneath doesn't also receive it. Release it with `unregisterTemporary`.
+    func registerTemporary(keyCode: Int, handler: @escaping () -> Void) -> EventHotKeyRef? {
+        nextTemporaryID += 1
+        var ref: EventHotKeyRef?
+        let status = RegisterEventHotKey(UInt32(keyCode), 0,
+                                         EventHotKeyID(signature: OSType(0x5348_4F43), id: nextTemporaryID),
+                                         GetApplicationEventTarget(), 0, &ref)
+        guard status == noErr, let ref else { return nil }
+        handlers[nextTemporaryID] = handler
+        temporaryIDs[ref] = nextTemporaryID
+        return ref
+    }
+
+    func unregisterTemporary(_ ref: EventHotKeyRef) {
+        UnregisterEventHotKey(ref)
+        if let id = temporaryIDs.removeValue(forKey: ref) { handlers[id] = nil }
+    }
 }

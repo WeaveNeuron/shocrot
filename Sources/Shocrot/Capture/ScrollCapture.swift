@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import ScreenCaptureKit
 import SwiftUI
 
@@ -16,7 +17,7 @@ final class ScrollCapture {
     private var border: NSPanel?
     private var hud: NSPanel?
     private var loop: Task<Void, Never>?
-    private var keyMonitors: [Any] = []
+    private var hotKeys: [EventHotKeyRef] = []
 
     static var isActive: Bool { current != nil }
 
@@ -38,17 +39,14 @@ final class ScrollCapture {
     private func begin() {
         showBorder()
         showHUD()
-        // Return finishes and Esc cancels even while the scrolled app keeps keyboard focus.
-        let handler: (NSEvent) -> Void = { [weak self] event in
-            switch event.keyCode {
-            case 36, 76: self?.finish()
-            case 53: self?.cancel()
-            default: break
-            }
+        // ↩ finishes and Esc cancels while the scrolled app keeps keyboard focus. Registered as hotkeys
+        // (not monitors) so the keys are consumed and don't also type into that app.
+        let center = HotKeyCenter.shared
+        if let ref = center.registerTemporary(keyCode: kVK_Return, handler: { [weak self] in self?.finish() }) {
+            hotKeys.append(ref)
         }
-        if let m = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: handler) { keyMonitors.append(m) }
-        if let m = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { handler($0); return $0 }) {
-            keyMonitors.append(m)
+        if let ref = center.registerTemporary(keyCode: kVK_Escape, handler: { [weak self] in self?.cancel() }) {
+            hotKeys.append(ref)
         }
         loop = Task { [weak self] in await self?.run() }
     }
@@ -108,8 +106,8 @@ final class ScrollCapture {
 
     private func close() {
         loop?.cancel()
-        keyMonitors.forEach(NSEvent.removeMonitor)
-        keyMonitors.removeAll()
+        hotKeys.forEach(HotKeyCenter.shared.unregisterTemporary)
+        hotKeys.removeAll()
         border?.orderOut(nil)
         hud?.orderOut(nil)
         border = nil

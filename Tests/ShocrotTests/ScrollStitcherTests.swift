@@ -111,6 +111,42 @@ struct ScrollStitcherTests {
         #expect(same)
     }
 
+    @Test func floatingOverlayOverPartOfTheAreaStillStitches() {
+        // Like a notification banner over the top-right corner: it stays put while the page moves.
+        func covered(_ offset: Int) -> CGImage {
+            let base = frame(of: page, offset: offset, height: 400, header: 0, footer: 0)
+            let ctx = CGContext(data: nil, width: base.width, height: base.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
+            ctx.draw(base, in: CGRect(x: 0, y: 0, width: base.width, height: base.height))
+            ctx.setFillColor(CGColor(gray: 0.95, alpha: 1))
+            ctx.fill(CGRect(x: base.width / 2, y: base.height - 60, width: base.width / 2, height: 50))
+            return ctx.makeImage()!
+        }
+        var stitcher = ScrollStitcher()
+        #expect(stitcher.add(covered(0)) == .started)
+        #expect(stitcher.add(covered(120)) == .appended(120))
+        #expect(stitcher.add(covered(260)) == .appended(140))
+    }
+
+    @Test func movingOverlayWithoutScrollingIsNotAWarning() {
+        // A pointer or banner moving over a still page: changed, but no scroll and nothing lost.
+        func withBlob(at y: Int) -> CGImage {
+            let base = frame(of: page, offset: 0, height: 400, header: 0, footer: 0)
+            let ctx = CGContext(data: nil, width: base.width, height: base.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
+            ctx.draw(base, in: CGRect(x: 0, y: 0, width: base.width, height: base.height))
+            ctx.setFillColor(CGColor(red: 1, green: 0.6, blue: 0, alpha: 1))
+            ctx.fill(CGRect(x: 120, y: y, width: 40, height: 60))
+            return ctx.makeImage()!
+        }
+        var stitcher = ScrollStitcher()
+        #expect(stitcher.add(withBlob(at: 100)) == .started)
+        #expect(stitcher.add(withBlob(at: 180)) == .unchanged)
+        #expect(stitcher.add(withBlob(at: 260)) == .unchanged)
+    }
+
     @Test func scrollingTooFarAtOnceIsReportedNotGuessed() {
         let (image, updates) = stitch(offsets: [0, 600])
         #expect(updates.last == .lost)
