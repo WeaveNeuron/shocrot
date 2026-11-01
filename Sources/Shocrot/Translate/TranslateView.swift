@@ -156,6 +156,7 @@ struct TranslateView: View {
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             .help("互换语言")
+            .accessibilityLabel("互换语言")
             LanguageMenu(selection: $model.target, automaticTitle: "自动", resolved: model.resolvedTarget) { model.translate() }
         }
     }
