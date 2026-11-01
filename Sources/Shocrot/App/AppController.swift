@@ -278,6 +278,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     func translateSelection() {
+        SelectionReader.log.info("translate selection: trusted=\(SelectionReader.isTrusted, privacy: .public)")
         guard SelectionReader.isTrusted else {
             Permission.accessibility.request()
             Feedback.toast("划词翻译需要“辅助功能”权限", symbol: "exclamationmark.triangle.fill")
@@ -287,6 +288,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         Task { @MainActor in
             let text = await SelectionReader.selectedText()
             TranslatePanel.show(text: text?.isEmpty == false ? text : nil, near: mouse)
+            SelectionReader.log.info("translate panel shown")
         }
     }
 

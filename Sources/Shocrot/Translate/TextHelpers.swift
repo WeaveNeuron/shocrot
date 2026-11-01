@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import CoreServices
+import os
 
 /// Word look-ups in the dictionaries installed in Dictionary.app (offline).
 enum SystemDictionary {
@@ -65,9 +66,17 @@ final class Speaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate, @u
 enum SelectionReader {
     static var isTrusted: Bool { AXIsProcessTrusted() }
 
+    static let log = Logger(subsystem: "com.weaveneuron.shocrot", category: "selection")
+
     static func selectedText() async -> String? {
-        if let text = viaAccessibility(), !text.isEmpty { return text }
-        return await viaCopy()
+        let app = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?"
+        if let text = viaAccessibility(), !text.isEmpty {
+            log.info("selection via AX from \(app, privacy: .public): \(text.count) chars")
+            return text
+        }
+        let copied = await viaCopy()
+        log.info("selection via ⌘C from \(app, privacy: .public): \(copied?.count ?? -1) chars")
+        return copied
     }
 
     private static func viaAccessibility() -> String? {
