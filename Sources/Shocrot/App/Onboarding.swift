@@ -37,7 +37,7 @@ struct OnboardingView: View {
                 .shadow(color: Color.accentColor.opacity(0.45), radius: 18, y: 6)
                 .padding(.top, 30)
             Text("欢迎使用 Shocrot").font(.system(size: 22, weight: .semibold)).padding(.top, 8)
-            Text("一个按键，截图、标注、贴图、识别与翻译。").foregroundStyle(.secondary).padding(.top, 4)
+            Text("一个按键，截图、录屏、标注、贴图、识别与翻译。").foregroundStyle(.secondary).padding(.top, 4)
 
             card("快捷键") {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 20), GridItem(.flexible())], spacing: 10) {
@@ -45,7 +45,7 @@ struct OnboardingView: View {
                         HStack(spacing: 8) {
                             Image(systemName: action.symbol)
                                 .foregroundStyle(Color.accentColor)
-                                .frame(width: 18)
+                                .frame(width: 24)
                             Text(action.title).lineLimit(1)
                             Spacer(minLength: 4)
                             KeyCaps(Settings.shared.hotKeys[action]?.displayString ?? "—")
@@ -63,7 +63,7 @@ struct OnboardingView: View {
             .padding(.top, 14)
 
             HStack {
-                Label("所有内容只在本机处理", systemImage: "lock")
+                Label("默认只在本机处理，联网翻译需手动开启", systemImage: "lock")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button(canCapture ? "开始使用" : "稍后") {
