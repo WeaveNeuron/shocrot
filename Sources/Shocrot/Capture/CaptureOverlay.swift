@@ -30,6 +30,8 @@ final class CaptureSession {
     let mode: CaptureMode
     private var panels: [OverlayPanel] = []
     private var views: [OverlayView] = []
+    /// The app that had focus before the overlay took it, to give it back afterwards.
+    private var previousApp: NSRunningApplication?
     private let completion: (CaptureOutcome, CaptureResult) -> Void
 
     static var isActive: Bool { current != nil }
@@ -80,6 +82,12 @@ final class CaptureSession {
 
     private func show() {
         let mouse = NSEvent.mouseLocation
+        // A key panel of an inactive app gets no keystrokes until it is clicked, so Esc, C and ⌘A
+        // would go to the app underneath. The overlay covers every screen, so the switch is invisible.
+        if !NSApp.isActive {
+            previousApp = NSWorkspace.shared.frontmostApplication
+            NSApp.activate()
+        }
         for (panel, view) in zip(panels, views) {
             // The frozen backdrop matches the screen, so only the dimming layer fades in.
             view.alphaValue = 0
@@ -126,6 +134,7 @@ final class CaptureSession {
         views.removeAll()
         CaptureSession.current = nil
         NSCursor.arrow.set()
+        if let previousApp, !previousApp.isTerminated { previousApp.activate() }
     }
 }
 
