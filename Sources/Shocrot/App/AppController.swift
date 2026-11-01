@@ -110,8 +110,21 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
 
     @objc private func menuAction(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let action = HotKeyAction(rawValue: raw) else { return }
-        // Give the menu time to close so it isn't captured.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.perform(action) }
+        // Start as soon as the menu has faded out, so it isn't captured but no time is wasted.
+        Task { @MainActor in
+            for _ in 0..<30 where Self.menuOnScreen() { try? await Task.sleep(for: .milliseconds(10)) }
+            perform(action)
+        }
+    }
+
+    /// Whether one of our menus is still on screen (including its fade-out).
+    private static func menuOnScreen() -> Bool {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        return list.contains {
+            $0[kCGWindowOwnerPID as String] as? Int32 == pid
+                && $0[kCGWindowLayer as String] as? Int == Int(CGWindowLevelForKey(.popUpMenuWindow))
+        }
     }
 
     @objc func showHistory() { HistoryWindow.show() }
