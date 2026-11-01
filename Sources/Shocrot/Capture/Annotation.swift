@@ -3,7 +3,7 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 
 enum Tool: String, CaseIterable, Identifiable {
-    case rect, ellipse, arrow, pen, highlighter, mosaic, text, counter
+    case rect, ellipse, arrow, pen, highlighter, mosaic, text, counter, ruler
 
     var id: String { rawValue }
 
@@ -17,6 +17,7 @@ enum Tool: String, CaseIterable, Identifiable {
         case .mosaic: return "checkerboard.rectangle"
         case .text: return "character.textbox"
         case .counter: return "1.circle"
+        case .ruler: return "ruler"
         }
     }
 
@@ -30,6 +31,7 @@ enum Tool: String, CaseIterable, Identifiable {
         case .mosaic: return "马赛克 (M)"
         case .text: return "文字 (T)"
         case .counter: return "序号 (N)"
+        case .ruler: return "测量 (U)"
         }
     }
 
@@ -43,6 +45,7 @@ enum Tool: String, CaseIterable, Identifiable {
         case .mosaic: return "m"
         case .text: return "t"
         case .counter: return "n"
+        case .ruler: return "u"
         }
     }
 
@@ -57,6 +60,15 @@ struct Annotation {
     var width: CGFloat
     var text: String = ""
     var number: Int = 0
+    /// Pixels per point of the captured screen, so the ruler reads in real image pixels.
+    var pixelScale: CGFloat = 1
+
+    /// The ruler's label, e.g. "240 px".
+    var measurement: String {
+        guard points.count >= 2 else { return "" }
+        let d = hypot(points[1].x - points[0].x, points[1].y - points[0].y) * pixelScale
+        return "\(Int(d.rounded())) px"
+    }
 
     var boundingRect: CGRect {
         guard let first = points.first else { return .zero }
@@ -146,7 +158,42 @@ struct AnnotationRenderer {
             NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
             str.draw(at: CGPoint(x: p.x - s.width / 2, y: p.y - s.height / 2))
             NSGraphicsContext.restoreGraphicsState()
+        case .ruler:
+            guard a.points.count >= 2 else { return }
+            drawRuler(a, in: ctx)
         }
+    }
+
+    /// A thin line with end ticks and its length in a dark pill at the midpoint.
+    private func drawRuler(_ a: Annotation, in ctx: CGContext) {
+        let s = a.points[0], e = a.points[1]
+        let len = hypot(e.x - s.x, e.y - s.y)
+        guard len > 1 else { return }
+        let nx = -(e.y - s.y) / len, ny = (e.x - s.x) / len
+        let tick: CGFloat = 5 + a.width
+        ctx.setLineWidth(max(1.5, a.width * 0.5))
+        ctx.setLineCap(.butt)
+        ctx.move(to: s); ctx.addLine(to: e)
+        for p in [s, e] {
+            ctx.move(to: CGPoint(x: p.x + nx * tick, y: p.y + ny * tick))
+            ctx.addLine(to: CGPoint(x: p.x - nx * tick, y: p.y - ny * tick))
+        }
+        ctx.strokePath()
+
+        let str = NSAttributedString(string: a.measurement, attributes: [
+            .font: NSFont.roundedMonospaced(size: 11, weight: .semibold), .foregroundColor: NSColor.white,
+        ])
+        let size = str.size()
+        let mid = CGPoint(x: (s.x + e.x) / 2, y: (s.y + e.y) / 2)
+        let pill = CGRect(x: mid.x - size.width / 2 - 7, y: mid.y - size.height / 2 - 3,
+                          width: size.width + 14, height: size.height + 6)
+        ctx.setFillColor(NSColor.black.withAlphaComponent(0.72).cgColor)
+        ctx.addPath(CGPath(roundedRect: pill, cornerWidth: pill.height / 2, cornerHeight: pill.height / 2, transform: nil))
+        ctx.fillPath()
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+        str.draw(at: CGPoint(x: pill.minX + 7, y: pill.minY + 3))
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func rect(_ a: CGPoint, _ b: CGPoint) -> CGRect {

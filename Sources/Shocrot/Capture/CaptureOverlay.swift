@@ -709,7 +709,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             needsDisplay = true
         default:
             let color = tool == .highlighter && state.color == OverlayState.palette[0] ? OverlayState.palette[2] : state.color
-            current = Annotation(tool: tool, points: [p], color: color, width: state.width)
+            current = Annotation(tool: tool, points: [p], color: color, width: state.width, pixelScale: scale)
             phase = .drawing
         }
     }
@@ -719,7 +719,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         switch a.tool {
         case .pen, .highlighter:
             a.points.append(p)
-        case .arrow:
+        case .arrow, .ruler:
             var end = p
             if constrained { // snap to 45°
                 let angle = (atan2(p.y - start.y, p.x - start.x) / (.pi / 4)).rounded() * (.pi / 4)
@@ -904,6 +904,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             guard let p = a.points.first else { return .zero }
             let d = 14 + a.width * 4
             return CGRect(x: p.x - d / 2, y: p.y - d / 2, width: d, height: d)
+        case .ruler:
+            return a.boundingRect.insetBy(dx: -30, dy: -14) // room for the end ticks and the label
         default:
             let pad = a.tool == .highlighter ? a.width * 2.5 : a.width / 2
             return a.boundingRect.insetBy(dx: -pad, dy: -pad)
@@ -928,7 +930,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             let rx = r.width / 2, ry = r.height / 2
             let v = hypot((p.x - r.midX) / rx, (p.y - r.midY) / ry)
             return abs(v - 1) * min(rx, ry) < tol
-        case .arrow, .pen, .highlighter:
+        case .arrow, .pen, .highlighter, .ruler:
             let t = a.tool == .highlighter ? a.width * 2.5 + 3 : tol
             return zip(a.points, a.points.dropFirst()).contains { distance(p, $0, $1) < t }
         }

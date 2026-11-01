@@ -116,3 +116,13 @@ struct TransformTests {
         #expect(layout(try #require(ImageOutput.transformed(tall, .flipVertical))) == ["b", "r"])
     }
 }
+
+@Suite struct RulerTests {
+    @Test func measuresInImagePixels() {
+        var a = Annotation(tool: .ruler, points: [CGPoint(x: 10, y: 10), CGPoint(x: 40, y: 50)], color: .red, width: 4)
+        #expect(a.measurement == "50 px")
+        a.pixelScale = 2
+        #expect(a.measurement == "100 px")
+        #expect(Tool.allCases.filter { $0.shortcut == "u" } == [.ruler])
+    }
+}
