@@ -112,6 +112,13 @@ enum Feedback {
     private static var toastPanel: NSPanel?
     private static var toastWork: DispatchWorkItem?
 
+    /// Removes the toast at once, e.g. before the screen is captured.
+    static func hideToast() {
+        toastWork?.cancel()
+        toastPanel?.orderOut(nil)
+        toastPanel = nil
+    }
+
     /// A small HUD message near the top of the screen under the mouse.
     static func toast(_ message: String, symbol: String = "checkmark.circle.fill") {
         toastWork?.cancel()

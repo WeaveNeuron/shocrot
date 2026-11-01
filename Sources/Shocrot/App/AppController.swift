@@ -81,6 +81,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
             }
             menu.addItem(item)
         }
+        addItem(to: menu, "3 秒后区域截图", "timer", #selector(delayedCapture))
         menu.addItem(.separator())
         addItem(to: menu, "识别剪贴板图片中的文字", "doc.on.clipboard", #selector(recognizeClipboard))
         addItem(to: menu, "识别图片文件中的文字…", "photo", #selector(recognizeFile))
@@ -172,6 +173,20 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
             } catch {
                 Feedback.error(error)
             }
+        }
+    }
+
+    /// Counts down so menus, hover states and tooltips can be opened before the screen freezes.
+    @objc func delayedCapture() {
+        guard ScreenCapturer.canCapture else { OnboardingWindow.show(); return }
+        Task { @MainActor in
+            for n in stride(from: 3, through: 1, by: -1) {
+                Feedback.toast("\(n) 秒后截图", symbol: "timer")
+                try? await Task.sleep(for: .seconds(1))
+            }
+            Feedback.hideToast()
+            try? await Task.sleep(for: .milliseconds(80)) // let the toast leave the screen
+            startCapture(.area)
         }
     }
 
