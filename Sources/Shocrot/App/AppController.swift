@@ -70,7 +70,10 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         }
         if menu.numberOfItems > 0 { menu.addItem(.separator()) }
         for action in HotKeyAction.allCases {
-            if action == .translateSelection { menu.addItem(.separator()) }
+            if action == .translateSelection {
+                addItem(to: menu, "3 秒后区域截图", "timer", #selector(delayedCapture))
+                menu.addItem(.separator())
+            }
             let item = NSMenuItem(title: action.title, action: #selector(menuAction(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = action.rawValue
@@ -81,7 +84,6 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
             }
             menu.addItem(item)
         }
-        addItem(to: menu, "3 秒后区域截图", "timer", #selector(delayedCapture))
         menu.addItem(.separator())
         addItem(to: menu, "识别剪贴板图片中的文字", "doc.on.clipboard", #selector(recognizeClipboard))
         addItem(to: menu, "识别图片文件中的文字…", "photo", #selector(recognizeFile))
