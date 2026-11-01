@@ -15,6 +15,37 @@ enum ImageOutput {
         NSImage(cgImage: image, size: CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale))
     }
 
+    /// The capture on a soft gradient, with rounded corners and a drop shadow, ready to share.
+    static func beautified(_ image: CGImage, scale: CGFloat) -> CGImage? {
+        let w = CGFloat(image.width), h = CGFloat(image.height)
+        let pad = (min(max(min(w, h) / scale * 0.08, 32), 80) * scale).rounded()
+        let radius = 10 * scale
+        let size = CGSize(width: w + pad * 2, height: h + pad * 2)
+        guard let ctx = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
+                                  bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                      | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        let colors = [CGColor(srgbRed: 0.56, green: 0.77, blue: 0.99, alpha: 1),
+                      CGColor(srgbRed: 0.88, green: 0.76, blue: 0.99, alpha: 1)] as CFArray
+        if let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors, locations: [0, 1]) {
+            ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: size.height), end: CGPoint(x: size.width, y: 0), options: [])
+        }
+        let card = CGRect(x: pad, y: pad, width: w, height: h)
+        let path = CGPath(roundedRect: card, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        ctx.saveGState()
+        ctx.setShadow(offset: CGSize(width: 0, height: -8 * scale), blur: 28 * scale,
+                      color: CGColor(gray: 0, alpha: 0.28))
+        ctx.addPath(path)
+        ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+        ctx.fillPath()
+        ctx.restoreGState()
+        ctx.addPath(path)
+        ctx.clip()
+        ctx.interpolationQuality = .none
+        ctx.draw(image, in: card)
+        return ctx.makeImage()
+    }
+
     static func copy(_ image: CGImage, scale: CGFloat) {
         let pb = NSPasteboard.general
         pb.clearContents()

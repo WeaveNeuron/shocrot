@@ -69,14 +69,18 @@ enum CapturePreview {
 }
 
 final class PreviewModel: ObservableObject {
-    let image: CGImage
+    let original: CGImage
     let scale: CGFloat
-    let thumbnail: NSImage
+    @Published private(set) var image: CGImage
+    @Published private(set) var thumbnail: NSImage
+    @Published private(set) var isBeautified = false
     @Published var status: String
     @Published var savedURL: URL?
     var onClose: () -> Void = {}
+    private var tempURL: URL?
 
     init(image: CGImage, scale: CGFloat, status: String, savedURL: URL?) {
+        original = image
         self.image = image
         self.scale = scale
         self.status = status
@@ -84,15 +88,30 @@ final class PreviewModel: ObservableObject {
         thumbnail = ImageOutput.nsImage(image, scale: scale)
     }
 
+    /// Switches between the plain capture and the one on a gradient, and copies the result.
+    func toggleBeautify() {
+        let next = isBeautified ? original : ImageOutput.beautified(original, scale: scale)
+        guard let next else { return }
+        isBeautified.toggle()
+        image = next
+        thumbnail = ImageOutput.nsImage(next, scale: scale)
+        savedURL = nil // the saved file is the other version
+        tempURL = nil
+        ImageOutput.copy(next, scale: scale)
+        status = isBeautified ? "已美化并复制" : "已复制原图"
+    }
+
     /// A file for drag & drop: the saved file if any, otherwise a temporary PNG.
-    lazy var dragURL: URL? = {
+    var dragURL: URL? {
         if let savedURL { return savedURL }
+        if let tempURL { return tempURL }
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Shocrot", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent(ImageOutput.timestampName).appendingPathExtension("png")
         guard let data = ImageOutput.data(image, format: .png), (try? data.write(to: url)) != nil else { return nil }
+        tempURL = url
         return url
-    }()
+    }
 }
 
 private struct PreviewCard: View {
@@ -101,8 +120,9 @@ private struct PreviewCard: View {
     @State private var hovering = false
 
     private var thumbSize: CGSize {
-        let s = model.thumbnail.size
-        let fit = min(252 / max(s.width, 1), 148 / max(s.height, 1), 1)
+        // Sized from the original so the panel keeps its size when the beautified version is shown.
+        let s = CGSize(width: CGFloat(model.original.width) / model.scale, height: CGFloat(model.original.height) / model.scale)
+        let fit = min(280 / max(s.width, 1), 148 / max(s.height, 1), 1)
         return CGSize(width: max(s.width * fit, 120), height: max(s.height * fit, 60))
     }
 
@@ -149,6 +169,10 @@ private struct PreviewCard: View {
                     ImageOutput.copy(model.image, scale: model.scale)
                     model.status = "已复制"
                 }
+                PreviewButton(symbol: model.isBeautified ? "photo" : "sparkles",
+                              help: model.isBeautified ? "恢复原图" : "美化：加背景和阴影") {
+                    model.toggleBeautify()
+                }
                 if let url = model.savedURL {
                     PreviewButton(symbol: "folder", help: "在访达中显示") {
                         NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -178,7 +202,7 @@ private struct PreviewCard: View {
             .padding(.trailing, 6)
             .frame(height: 34)
         }
-        .frame(width: 272)
+        .frame(width: 300)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.primary.opacity(0.1), lineWidth: 0.5))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))

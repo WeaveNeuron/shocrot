@@ -47,3 +47,40 @@ struct PinnedTextTests {
         #expect(image.height > 100)
     }
 }
+
+@Suite("Beautify")
+struct BeautifyTests {
+    private func solid(_ w: Int, _ h: Int) -> CGImage {
+        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
+        ctx.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage()!
+    }
+
+    private func pixel(_ image: CGImage, _ x: Int, _ y: Int) -> (r: UInt8, g: UInt8, b: UInt8) {
+        let ctx = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
+        let p = ctx.data!.assumingMemoryBound(to: UInt8.self)
+        return (p[0], p[1], p[2])
+    }
+
+    @Test func padsEvenlyAndKeepsTheCaptureSharp() throws {
+        let out = try #require(ImageOutput.beautified(solid(800, 400), scale: 2))
+        // 8% of the short side (200 pt) is 16 pt, clamped up to 32 pt = 64 px per edge.
+        #expect(out.width == 800 + 128)
+        #expect(out.height == 400 + 128)
+        let center = pixel(out, out.width / 2, out.height / 2)
+        #expect(center.r == 255 && center.g == 0 && center.b == 0)
+        let corner = pixel(out, 2, 2) // background gradient, not the capture
+        #expect(corner.b > 200 && corner.r < 200)
+    }
+
+    @Test func paddingIsCappedForLargeCaptures() throws {
+        let out = try #require(ImageOutput.beautified(solid(4000, 3000), scale: 1))
+        #expect(out.width == 4000 + 160)
+    }
+}
