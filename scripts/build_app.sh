@@ -62,6 +62,11 @@ EOF
 # Create one with scripts/make_local_cert.sh.
 IDENTITY="${SHOCROT_SIGN_IDENTITY:-Shocrot Local Signing}"
 if security find-certificate -c "$IDENTITY" >/dev/null 2>&1; then SIGN="$IDENTITY"; else SIGN="-"; fi
+# A locked login keychain makes codesign wait for a password (or fail); stop early instead.
+if [[ "$SIGN" != "-" ]] && ! security show-keychain-info login.keychain >/dev/null 2>&1; then
+  echo "The login keychain is locked (screen locked?). Unlock the Mac and build again." >&2
+  exit 1
+fi
 codesign --force --deep --sign "$SIGN" --identifier com.weaveneuron.shocrot "$APP"
 echo "Built $APP"
 
