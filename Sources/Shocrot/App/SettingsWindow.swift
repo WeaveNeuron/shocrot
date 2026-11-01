@@ -195,7 +195,11 @@ private struct ShortcutSettings: View {
                         HotKeyRecorder(hotKey: Binding(get: { s.hotKeys[action] }, set: { s.hotKeys[action] = $0 }))
                     } label: {
                         HStack {
-                            Label(action.title, systemImage: action.symbol)
+                            Label {
+                                Text(action.title)
+                            } icon: {
+                                Image(systemName: action.symbol).frame(width: 22) // keeps the titles in one column
+                            }
                             if app.failedHotKeys.contains(action) {
                                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                                     .help("此快捷键已被其他应用占用")
@@ -210,8 +214,9 @@ private struct ShortcutSettings: View {
             Section("截图时的快捷操作") {
                 shortcutRow("复制并完成", "↩  ⌘C  双击")
                 shortcutRow("保存 / 另存为", "⌘S  ⇧⌘S")
-                shortcutRow("识别文字 / 贴图", "⌘T  ⌘P")
-                shortcutRow("标注工具", "R O A P H M T N")
+                shortcutRow("识别文字 / 翻译 / 贴图", "⌘T  ⌘D  ⌘P")
+                shortcutRow("滚动截图 / 录屏", "⌘L  ⌘R")
+                shortcutRow("标注工具", Tool.allCases.map { String($0.shortcut).uppercased() }.joined(separator: " "))
                 shortcutRow("撤销 / 重做", "⌘Z  ⇧⌘Z")
                 shortcutRow("微调选区", "方向键（⇧ 10 倍）")
                 shortcutRow("复制取色 / 全屏选区", "C  ⌘A")
