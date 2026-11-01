@@ -2,7 +2,6 @@ import AppKit
 import Carbon.HIToolbox
 import ScreenCaptureKit
 import SwiftUI
-import os
 
 /// Scrolling capture: keeps grabbing a screen region while the user scrolls the content under it,
 /// and stitches the frames into one tall image.
@@ -46,8 +45,6 @@ final class ScrollCapture {
         keyTap = KeyInterceptor(keyCodes: [kVK_Return, kVK_ANSI_KeypadEnter, kVK_Escape]) { [weak self] code in
             if code == kVK_Escape { self?.cancel() } else { self?.finish() }
         }
-        Logger(subsystem: "com.weaveneuron.shocrot", category: "scroll")
-            .info("key tap \(self.keyTap == nil ? "unavailable" : "active", privacy: .public), trusted=\(AXIsProcessTrusted(), privacy: .public)")
         loop = Task { [weak self] in await self?.run() }
     }
 
