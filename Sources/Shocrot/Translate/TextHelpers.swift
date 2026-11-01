@@ -100,13 +100,20 @@ enum SelectionReader {
         } ?? []
         let before = pb.changeCount
 
-        let source = CGEventSource(stateID: .combinedSessionState)
+        // The hotkey's ⌥/⇧/⌃ may still be held; apps would then see ⌥⇧⌘C and copy nothing.
+        let held: CGEventFlags = [.maskAlternate, .maskShift, .maskControl]
+        for _ in 0..<20 where !CGEventSource.flagsState(.hidSystemState).intersection(held).isEmpty {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        // A private source keeps any still-held modifiers out of the synthetic keystroke.
+        let source = CGEventSource(stateID: .privateState)
         for down in [true, false] {
             let event = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: down) // C
             event?.flags = .maskCommand
             event?.post(tap: .cghidEventTap)
         }
-        for _ in 0..<12 where pb.changeCount == before { try? await Task.sleep(for: .milliseconds(25)) }
+        // Browsers and Electron apps can take a few hundred ms to fill the pasteboard.
+        for _ in 0..<32 where pb.changeCount == before { try? await Task.sleep(for: .milliseconds(25)) }
         guard pb.changeCount != before else { return nil }
         let text = pb.string(forType: .string)
 
