@@ -41,22 +41,21 @@ enum ScreenCapturer {
         if let demo = demoSnapshots() { return demo }
         #endif
         guard hasPermission else { throw CaptureError.permissionDenied }
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        var result: [ScreenSnapshot] = []
-        for screen in NSScreen.screens {
-            guard let id = screen.displayID,
-                  let display = content.displays.first(where: { $0.displayID == id }) else { continue }
-            let filter = SCContentFilter(display: display, excludingWindows: [])
-            let config = SCStreamConfiguration()
-            let scale = screen.backingScaleFactor
-            config.width = Int(CGFloat(display.width) * scale)
-            config.height = Int(CGFloat(display.height) * scale)
-            config.showsCursor = false
-            config.captureResolution = .best
-            config.colorSpaceName = CGColorSpace.sRGB
-            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-            result.append(ScreenSnapshot(screen: screen, image: image))
+        // Capturing a screen rectangle skips the shareable-content query, which roughly halves the
+        // time from hotkey to overlay. Displays are captured in parallel.
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let screens = NSScreen.screens
+        let images = try await withThrowingTaskGroup(of: (Int, CGImage).self) { group in
+            for (i, screen) in screens.enumerated() {
+                let f = screen.frame
+                let rect = CGRect(x: f.minX, y: primaryHeight - f.maxY, width: f.width, height: f.height)
+                group.addTask { (i, try await SCScreenshotManager.captureImage(in: rect)) }
+            }
+            var images: [Int: CGImage] = [:]
+            for try await (i, image) in group { images[i] = image }
+            return images
         }
+        let result = screens.indices.compactMap { i in images[i].map { ScreenSnapshot(screen: screens[i], image: $0) } }
         if result.isEmpty { throw CaptureError.noDisplay }
         return result
     }

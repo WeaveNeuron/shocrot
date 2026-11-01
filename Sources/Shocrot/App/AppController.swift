@@ -1,3 +1,4 @@
+import ScreenCaptureKit
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -23,6 +24,10 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         registerHotKeys()
         VisionOCREngine.warmUp(languages: Settings.shared.ocrLanguages)
         TranslatePanel.prepare()
+        // The first ScreenCaptureKit call of a session is slow; pay for it now rather than on the first hotkey.
+        if ScreenCapturer.hasPermission {
+            Task { _ = try? await SCScreenshotManager.captureImage(in: CGRect(x: 0, y: 0, width: 2, height: 2)) }
+        }
         NotificationCenter.default.addObserver(forName: .hotKeysChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.registerHotKeys() }
         }
