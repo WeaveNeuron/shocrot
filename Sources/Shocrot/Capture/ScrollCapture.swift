@@ -2,6 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import ScreenCaptureKit
 import SwiftUI
+import os
 
 /// Scrolling capture: keeps grabbing a screen region while the user scrolls the content under it,
 /// and stitches the frames into one tall image.
@@ -17,7 +18,7 @@ final class ScrollCapture {
     private var border: NSPanel?
     private var hud: NSPanel?
     private var loop: Task<Void, Never>?
-    private var hotKeys: [EventHotKeyRef] = []
+    private var keyTap: KeyInterceptor?
 
     static var isActive: Bool { current != nil }
 
@@ -39,15 +40,14 @@ final class ScrollCapture {
     private func begin() {
         showBorder()
         showHUD()
-        // ↩ finishes and Esc cancels while the scrolled app keeps keyboard focus. Registered as hotkeys
-        // (not monitors) so the keys are consumed and don't also type into that app.
-        let center = HotKeyCenter.shared
-        if let ref = center.registerTemporary(keyCode: kVK_Return, handler: { [weak self] in self?.finish() }) {
-            hotKeys.append(ref)
+        // ↩ finishes and Esc cancels while the scrolled app keeps keyboard focus. An event tap (needs
+        // Accessibility) swallows just those two keys, so they don't also type into that app. Without the
+        // permission the buttons still work.
+        keyTap = KeyInterceptor(keyCodes: [kVK_Return, kVK_ANSI_KeypadEnter, kVK_Escape]) { [weak self] code in
+            if code == kVK_Escape { self?.cancel() } else { self?.finish() }
         }
-        if let ref = center.registerTemporary(keyCode: kVK_Escape, handler: { [weak self] in self?.cancel() }) {
-            hotKeys.append(ref)
-        }
+        Logger(subsystem: "com.weaveneuron.shocrot", category: "scroll")
+            .info("key tap \(self.keyTap == nil ? "unavailable" : "active", privacy: .public), trusted=\(AXIsProcessTrusted(), privacy: .public)")
         loop = Task { [weak self] in await self?.run() }
     }
 
@@ -106,8 +106,8 @@ final class ScrollCapture {
 
     private func close() {
         loop?.cancel()
-        hotKeys.forEach(HotKeyCenter.shared.unregisterTemporary)
-        hotKeys.removeAll()
+        keyTap?.stop()
+        keyTap = nil
         border?.orderOut(nil)
         hud?.orderOut(nil)
         border = nil
@@ -207,4 +207,51 @@ private struct ScrollCaptureHUD: View {
         .animation(.easeOut(duration: 0.15), value: model.height)
         .padding(10)
     }
+}
+
+/// Swallows a few keys system-wide for as long as it lives, reporting each press on the main thread.
+final class KeyInterceptor {
+    private let keyCodes: Set<Int>
+    private let onPress: (Int) -> Void
+    private var tap: CFMachPort?
+    private var source: CFRunLoopSource?
+
+    init?(keyCodes: Set<Int>, onPress: @escaping (Int) -> Void) {
+        self.keyCodes = keyCodes
+        self.onPress = onPress
+        let mask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.keyUp.rawValue)
+        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+                                          eventsOfInterest: CGEventMask(mask), callback: { _, type, event, info in
+            guard let info else { return Unmanaged.passUnretained(event) }
+            let me = Unmanaged<KeyInterceptor>.fromOpaque(info).takeUnretainedValue()
+            return me.handle(type, event)
+        }, userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return nil }
+        self.tap = tap
+        source = CFMachPortCreateRunLoopSource(nil, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+    }
+
+    private func handle(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+            return Unmanaged.passUnretained(event)
+        }
+        let code = Int(event.getIntegerValueField(.keyboardEventKeycode))
+        let modifiers = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
+        guard keyCodes.contains(code), modifiers.isEmpty else { return Unmanaged.passUnretained(event) }
+        if type == .keyDown && event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
+            DispatchQueue.main.async { self.onPress(code) }
+        }
+        return nil // swallowed
+    }
+
+    func stop() {
+        if let tap { CGEvent.tapEnable(tap: tap, enable: false) }
+        if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+        tap = nil
+        source = nil
+    }
+
+    deinit { stop() }
 }
