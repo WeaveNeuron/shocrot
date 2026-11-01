@@ -84,3 +84,35 @@ struct BeautifyTests {
         #expect(out.width == 4000 + 160)
     }
 }
+
+@Suite("Pin transforms")
+struct TransformTests {
+    /// 2×1: red on the left, blue on the right.
+    private let source: CGImage = {
+        let ctx = CGContext(data: nil, width: 2, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
+        ctx.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)); ctx.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        ctx.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1)); ctx.fill(CGRect(x: 1, y: 0, width: 1, height: 1))
+        return ctx.makeImage()!
+    }()
+
+    /// "r" or "b" for each pixel, row by row from the top.
+    private func layout(_ image: CGImage) -> [String] {
+        let w = image.width, h = image.height
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        let ctx = CGContext(data: &px, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return (0..<h).map { y in String((0..<w).map { x in px[(y * w + x) * 4] > 128 ? "r" : "b" }) }
+    }
+
+    @Test func rotationsAndFlipsPutPixelsWhereExpected() throws {
+        #expect(layout(source) == ["rb"])
+        #expect(layout(try #require(ImageOutput.transformed(source, .rotateRight))) == ["r", "b"])
+        #expect(layout(try #require(ImageOutput.transformed(source, .rotateLeft))) == ["b", "r"])
+        #expect(layout(try #require(ImageOutput.transformed(source, .flipHorizontal))) == ["br"])
+        let tall = try #require(ImageOutput.transformed(source, .rotateRight))
+        #expect(layout(try #require(ImageOutput.transformed(tall, .flipVertical))) == ["b", "r"])
+    }
+}

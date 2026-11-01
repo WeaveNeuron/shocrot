@@ -5,9 +5,9 @@ import SwiftUI
 final class PinWindow: NSPanel {
     private static var open: [PinWindow] = []
 
-    private let image: CGImage
+    private var image: CGImage
     private let scale: CGFloat
-    private let baseSize: CGSize
+    private var baseSize: CGSize
     private var zoom: CGFloat = 1
     private let zoomLabel = NSTextField(labelWithString: "")
     private var labelWork: DispatchWorkItem?
@@ -117,10 +117,12 @@ final class PinWindow: NSPanel {
             case "=", "+": setZoom(zoom * 1.1, anchor: nil)
             case "-": setZoom(zoom / 1.1, anchor: nil)
             case "0": setZoom(1, anchor: nil)
+            case "r": apply(.rotateRight)
             default: super.keyDown(with: event)
             }
             return
         }
+        if flags == [.command, .shift], key == "r" { apply(.rotateLeft); return }
         super.keyDown(with: event)
     }
 
@@ -182,6 +184,14 @@ final class PinWindow: NSPanel {
         opacity.submenu = sub
         menu.addItem(opacity)
         menu.addItem(.separator())
+        let right = menu.addItem(withTitle: "向右旋转", action: #selector(rotateRight), keyEquivalent: "r")
+        right.target = self
+        let left = menu.addItem(withTitle: "向左旋转", action: #selector(rotateLeft), keyEquivalent: "r")
+        left.keyEquivalentModifierMask = [.command, .shift]
+        left.target = self
+        menu.addItem(withTitle: "水平翻转", action: #selector(flipHorizontal), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "垂直翻转", action: #selector(flipVertical), keyEquivalent: "").target = self
+        menu.addItem(.separator())
         menu.addItem(withTitle: "关闭", action: #selector(closePin), keyEquivalent: "w").target = self
         menu.addItem(withTitle: "关闭全部贴图", action: #selector(closeAllPins), keyEquivalent: "").target = self
         return menu
@@ -196,6 +206,24 @@ final class PinWindow: NSPanel {
     @objc private func recognizeText() { AppController.shared.recognize(image: image, scale: scale) }
     @objc private func resetZoom() { setZoom(1, anchor: nil) }
     @objc private func setOpacity(_ sender: NSMenuItem) { alphaValue = CGFloat(sender.tag) / 100 }
+    @objc private func rotateRight() { apply(.rotateRight) }
+    @objc private func rotateLeft() { apply(.rotateLeft) }
+    @objc private func flipHorizontal() { apply(.flipHorizontal) }
+    @objc private func flipVertical() { apply(.flipVertical) }
+
+    /// Rotates or mirrors the pinned image in place, keeping its centre and zoom. Copy/save/OCR use the result.
+    private func apply(_ t: ImageOutput.Transform) {
+        guard let next = ImageOutput.transformed(image, t) else { return }
+        image = next
+        contentView?.layer?.contents = next
+        baseSize = CGSize(width: CGFloat(next.width) / scale, height: CGFloat(next.height) / scale)
+        let center = CGPoint(x: frame.midX, y: frame.midY)
+        let size = CGSize(width: baseSize.width * zoom, height: baseSize.height * zoom)
+        setFrame(CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2,
+                        width: size.width, height: size.height).integral, display: true)
+        setHovering(true)
+    }
+
     @objc private func closePin() { close() }
     @objc private func closeAllPins() { PinWindow.closeAll() }
 }

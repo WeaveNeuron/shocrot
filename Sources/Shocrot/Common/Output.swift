@@ -46,6 +46,29 @@ enum ImageOutput {
         return ctx.makeImage()
     }
 
+    enum Transform { case rotateRight, rotateLeft, flipHorizontal, flipVertical }
+
+    /// A rotated or mirrored copy, pixel for pixel.
+    static func transformed(_ image: CGImage, _ t: Transform) -> CGImage? {
+        let w = image.width, h = image.height
+        let turns = t == .rotateRight || t == .rotateLeft
+        let (ow, oh) = turns ? (h, w) : (w, h)
+        guard let ctx = CGContext(data: nil, width: ow, height: oh, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                      | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        ctx.interpolationQuality = .none
+        // Core Graphics is y-up, so a clockwise turn on screen is a negative angle here.
+        switch t {
+        case .rotateRight: ctx.translateBy(x: 0, y: CGFloat(oh)); ctx.rotate(by: -.pi / 2)
+        case .rotateLeft: ctx.translateBy(x: CGFloat(ow), y: 0); ctx.rotate(by: .pi / 2)
+        case .flipHorizontal: ctx.translateBy(x: CGFloat(ow), y: 0); ctx.scaleBy(x: -1, y: 1)
+        case .flipVertical: ctx.translateBy(x: 0, y: CGFloat(oh)); ctx.scaleBy(x: 1, y: -1)
+        }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage()
+    }
+
     /// Puts a file on the clipboard, to paste into Finder, chats or mail.
     static func copyFile(_ url: URL) {
         NSPasteboard.general.clearContents()
