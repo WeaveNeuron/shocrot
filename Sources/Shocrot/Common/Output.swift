@@ -46,6 +46,12 @@ enum ImageOutput {
         return ctx.makeImage()
     }
 
+    /// Puts a file on the clipboard, to paste into Finder, chats or mail.
+    static func copyFile(_ url: URL) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([url as NSURL])
+    }
+
     static func copy(_ image: CGImage, scale: CGFloat) {
         let pb = NSPasteboard.general
         pb.clearContents()
@@ -92,18 +98,25 @@ enum ImageOutput {
         return "Shocrot \(f.string(from: Date()))"
     }
 
+    /// A timestamped file name in `dir` that doesn't exist yet.
+    static func uniqueURL(in dir: URL, ext: String) -> URL {
+        let name = timestampName
+        var url = dir.appendingPathComponent(name).appendingPathExtension(ext)
+        var n = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = dir.appendingPathComponent("\(name) (\(n))").appendingPathExtension(ext)
+            n += 1
+        }
+        return url
+    }
+
     /// Quick-save into the configured folder. Returns the written URL.
     @discardableResult
     static func save(_ image: CGImage) throws -> URL {
         let settings = Settings.shared
         let dir = settings.saveDirectory
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        var url = dir.appendingPathComponent(timestampName).appendingPathExtension(settings.imageFormat.ext)
-        var n = 2
-        while FileManager.default.fileExists(atPath: url.path) {
-            url = dir.appendingPathComponent("\(timestampName) (\(n))").appendingPathExtension(settings.imageFormat.ext)
-            n += 1
-        }
+        let url = uniqueURL(in: dir, ext: settings.imageFormat.ext)
         guard let data = data(image, format: settings.imageFormat) else { throw CocoaError(.fileWriteUnknown) }
         try data.write(to: url)
         return url

@@ -193,7 +193,7 @@ private struct ScrollCaptureHUD: View {
                 .buttonStyle(.glass)
                 .help("取消 (Esc)")
             Button("完成", action: onDone)
-                .buttonStyle(.glassProminent)
+                .buttonStyle(HUDProminentButtonStyle(color: .accentColor))
                 .help("完成 (↩)")
         }
         .controlSize(.regular)
@@ -202,7 +202,27 @@ private struct ScrollCaptureHUD: View {
         .padding(.vertical, 8)
         .glassEffect(.regular.tint(Color(nsColor: .windowBackgroundColor).opacity(0.6)), in: .capsule)
         .animation(.easeOut(duration: 0.15), value: model.height)
+        // The panel never becomes key; without this the buttons draw in their inactive grey.
+        .environment(\.controlActiveState, .key)
         .padding(10)
+    }
+}
+
+/// A filled capsule that keeps its colour in panels that never become key (where `.glassProminent` greys out).
+struct HUDProminentButtonStyle: ButtonStyle {
+    let color: Color
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .fixedSize()
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(Capsule().fill(color.opacity(isEnabled ? 1 : 0.4)))
+            .brightness(configuration.isPressed ? -0.08 : 0)
+            .contentShape(Capsule())
     }
 }
 

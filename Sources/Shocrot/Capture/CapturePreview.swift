@@ -7,15 +7,20 @@ enum CapturePreview {
     private static var panel: NSPanel?
     private static var dismissWork: DispatchWorkItem?
     private static var hovering = false
+    private static weak var model: PreviewModel?
 
-    static func show(image: CGImage, scale: CGFloat, status: String, savedURL: URL?, on screen: NSScreen?) {
-        guard Settings.shared.showPreview else {
+    static func show(image: CGImage, scale: CGFloat, status: String, savedURL: URL?, videoURL: URL? = nil,
+                     on screen: NSScreen?) {
+        // A recording always gets the card: it is the only way to reach the file and the GIF export.
+        guard Settings.shared.showPreview || videoURL != nil else {
             Feedback.toast(status)
             return
         }
         close(animated: false)
 
         let model = PreviewModel(image: image, scale: scale, status: status, savedURL: savedURL)
+        model.videoURL = videoURL
+        CapturePreview.model = model
         let host = NSHostingView(rootView: PreviewCard(model: model) { hovering in
             CapturePreview.hovering = hovering
             if !hovering { scheduleDismiss(after: 3) }
@@ -45,12 +50,15 @@ enum CapturePreview {
         panel = p
         model.onClose = { close(animated: true) }
         hovering = false
-        scheduleDismiss(after: 6)
+        // A recording's card is the way to its file and the GIF export, so it stays longer.
+        scheduleDismiss(after: videoURL == nil ? 6 : 15)
     }
 
     private static func scheduleDismiss(after seconds: Double) {
         dismissWork?.cancel()
-        let work = DispatchWorkItem { if !hovering { close(animated: true) } }
+        let work = DispatchWorkItem {
+            if model?.isExporting == true { scheduleDismiss(after: 3) } else if !hovering { close(animated: true) }
+        }
         dismissWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
     }
@@ -76,6 +84,8 @@ final class PreviewModel: ObservableObject {
     @Published private(set) var isBeautified = false
     @Published var status: String
     @Published var savedURL: URL?
+    @Published var isExporting = false
+    var videoURL: URL?
     var onClose: () -> Void = {}
     private var tempURL: URL?
 
@@ -99,6 +109,26 @@ final class PreviewModel: ObservableObject {
         tempURL = nil
         ImageOutput.copy(next, scale: scale)
         status = isBeautified ? "已美化并复制" : "已复制原图"
+    }
+
+    /// Writes a GIF next to the recording, then puts it on the clipboard as a file.
+    func exportGIF() {
+        guard let videoURL, !isExporting else { return }
+        isExporting = true
+        status = "正在生成 GIF…"
+        Task { @MainActor in
+            defer { isExporting = false }
+            do {
+                let gif = try await GIFExport.make(from: videoURL)
+                ImageOutput.copyFile(gif)
+                savedURL = gif
+                tempURL = nil
+                status = "已生成 GIF 并复制"
+            } catch {
+                status = "GIF 生成失败"
+                Feedback.error(error)
+            }
+        }
     }
 
     /// A file for drag & drop: the saved file if any, otherwise a temporary PNG.
@@ -165,37 +195,54 @@ private struct PreviewCard: View {
                     .labelStyle(StatusLabelStyle())
                     .lineLimit(1)
                 Spacer(minLength: 6)
-                PreviewButton(symbol: "doc.on.doc", help: "复制") {
-                    ImageOutput.copy(model.image, scale: model.scale)
-                    model.status = "已复制"
-                }
-                PreviewButton(symbol: model.isBeautified ? "photo" : "sparkles",
-                              help: model.isBeautified ? "恢复原图" : "美化：加背景和阴影") {
-                    model.toggleBeautify()
-                }
-                if let url = model.savedURL {
+                if model.videoURL != nil {
+                    PreviewButton(symbol: "doc.on.doc", help: "复制文件") {
+                        if let url = model.savedURL { ImageOutput.copyFile(url) }
+                        model.status = "已复制文件"
+                    }
+                    PreviewButton(symbol: model.isExporting ? "hourglass" : "photo.stack", help: "转成 GIF") {
+                        model.exportGIF()
+                    }
+                    .disabled(model.isExporting)
+                    PreviewButton(symbol: "play.rectangle", help: "播放") {
+                        if let url = model.videoURL { NSWorkspace.shared.open(url) }
+                    }
                     PreviewButton(symbol: "folder", help: "在访达中显示") {
-                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                        if let url = model.savedURL { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                     }
                 } else {
-                    PreviewButton(symbol: "square.and.arrow.down", help: "保存") {
-                        do {
-                            model.savedURL = try ImageOutput.save(model.image)
-                            model.status = "已保存"
-                        } catch { Feedback.error(error) }
+                    PreviewButton(symbol: "doc.on.doc", help: "复制") {
+                        ImageOutput.copy(model.image, scale: model.scale)
+                        model.status = "已复制"
                     }
-                }
-                PreviewButton(symbol: "pin", help: "贴到屏幕") {
-                    PinWindow.pin(model.image, scale: model.scale)
-                    model.onClose()
-                }
-                PreviewButton(symbol: "text.viewfinder", help: "识别文字") {
-                    AppController.shared.recognize(image: model.image, scale: model.scale)
-                    model.onClose()
-                }
-                PreviewButton(symbol: "translate", help: "翻译") {
-                    AppController.shared.translate(image: model.image)
-                    model.onClose()
+                    PreviewButton(symbol: model.isBeautified ? "photo" : "sparkles",
+                                  help: model.isBeautified ? "恢复原图" : "美化：加背景和阴影") {
+                        model.toggleBeautify()
+                    }
+                    if let url = model.savedURL {
+                        PreviewButton(symbol: "folder", help: "在访达中显示") {
+                            NSWorkspace.shared.activateFileViewerSelecting([url])
+                        }
+                    } else {
+                        PreviewButton(symbol: "square.and.arrow.down", help: "保存") {
+                            do {
+                                model.savedURL = try ImageOutput.save(model.image)
+                                model.status = "已保存"
+                            } catch { Feedback.error(error) }
+                        }
+                    }
+                    PreviewButton(symbol: "pin", help: "贴到屏幕") {
+                        PinWindow.pin(model.image, scale: model.scale)
+                        model.onClose()
+                    }
+                    PreviewButton(symbol: "text.viewfinder", help: "识别文字") {
+                        AppController.shared.recognize(image: model.image, scale: model.scale)
+                        model.onClose()
+                    }
+                    PreviewButton(symbol: "translate", help: "翻译") {
+                        AppController.shared.translate(image: model.image)
+                        model.onClose()
+                    }
                 }
             }
             .padding(.leading, 10)

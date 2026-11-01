@@ -161,7 +161,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     // MARK: - Capture
 
     func startCapture(_ mode: CaptureMode) {
-        guard !CaptureSession.isActive, !ScrollCapture.isActive else { return }
+        guard !CaptureSession.isActive, !ScrollCapture.isActive, !ScreenRecording.isActive else { return }
         guard ScreenCapturer.canCapture else { OnboardingWindow.show(); return }
         // Keep our own transient windows out of the frozen screen.
         TranslatePanel.dismissUnpinned()
@@ -223,6 +223,20 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
             }
             return
         }
+        if outcome == .record, let screen {
+            ScreenRecording.start(rect: result.globalRect, on: screen) { url, duration in
+                Task { @MainActor in
+                    guard let poster = await GIFExport.poster(of: url) else {
+                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                        return
+                    }
+                    CapturePreview.show(image: poster, scale: screen.backingScaleFactor,
+                                        status: "录屏已保存 \(RecordingModel.format(duration))",
+                                        savedURL: url, videoURL: url, on: screen)
+                }
+            }
+            return
+        }
         if outcome != .ocr { Feedback.shutter() }
         let historyID = HistoryStore.shared.add(result.image, scale: result.scale)
         switch outcome {
@@ -245,7 +259,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                       near: CGPoint(x: result.globalRect.minX + 40, y: result.globalRect.minY))
         case .ocr:
             recognize(image: result.rawImage, scale: result.scale, historyID: historyID)
-        case .scroll:
+        case .scroll, .record:
             break
         }
     }
