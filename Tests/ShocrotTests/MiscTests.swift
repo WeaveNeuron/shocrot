@@ -395,3 +395,38 @@ struct TransformTests {
         #expect(!FocusReturn.shouldReturn(appIsActive: true, hasTitledWindow: false, targetTerminated: true))
     }
 }
+
+@Suite struct AuthDialogTests {
+    private let settings = CGRect(x: 800, y: 30, width: 740, height: 960)
+
+    private func window(_ owner: String, pid: pid_t, layer: Int, _ rect: CGRect) -> [CFString: Any] {
+        [kCGWindowOwnerName: owner, kCGWindowOwnerPID: pid, kCGWindowLayer: layer,
+         kCGWindowBounds: rect.dictionaryRepresentation]
+    }
+
+    @Test func findsTheSecurityAgentDialog() {
+        let dialog = CGRect(x: 1000, y: 400, width: 260, height: 240)
+        let list = [window("Dock", pid: 2, layer: 20, CGRect(x: 0, y: 0, width: 1920, height: 1080)),
+                    window("SecurityAgent", pid: 3, layer: 0, dialog)]
+        #expect(PermissionGuide.authDialog(in: list, over: settings, ownPID: 1, isRegularApp: { _ in false }) == dialog)
+    }
+
+    @Test func fallsBackToAFloatingBackgroundWindowOverSettings() {
+        let dialog = CGRect(x: 1000, y: 400, width: 260, height: 240)
+        let regular = window("Notes", pid: 4, layer: 3, dialog)
+        let background = window("SomeAuthUI", pid: 5, layer: 8, dialog)
+        let elsewhere = window("SomeAuthUI", pid: 5, layer: 8, dialog.offsetBy(dx: -900, dy: 0))
+        let pick = { (list: [[CFString: Any]]) in
+            PermissionGuide.authDialog(in: list, over: self.settings, ownPID: 1, isRegularApp: { $0 == 4 })
+        }
+        #expect(pick([regular]) == nil)
+        #expect(pick([elsewhere]) == nil)
+        #expect(pick([regular, background]) == dialog)
+    }
+
+    @Test func ignoresOwnWindowsAndOddSizes() {
+        let list = [window("SecurityAgent", pid: 1, layer: 0, CGRect(x: 1000, y: 400, width: 260, height: 240)),
+                    window("SecurityAgent", pid: 3, layer: 0, CGRect(x: 1000, y: 400, width: 28, height: 28))]
+        #expect(PermissionGuide.authDialog(in: list, over: settings, ownPID: 1, isRegularApp: { _ in false }) == nil)
+    }
+}

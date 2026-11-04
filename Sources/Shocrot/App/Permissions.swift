@@ -171,13 +171,19 @@ enum PermissionGuide {
                 if !settingsRunning && Date().timeIntervalSince(started) > 5 { close(); return }
                 // Follow the System Settings window, and step aside while another app is on top of it.
                 if let frame = settingsWindowFrame() {
-                    // Line up with the app list, which fills the pane right of the fixed-width sidebar.
+                    // While the system asks for Touch ID or a password, sit just under its dialog as a caption;
+                    // otherwise line up with the app list, which fills the pane right of the fixed-width sidebar.
+                    let dialog = authDialogFrame(near: frame)
                     let list = NSRect(x: frame.minX + 252, y: frame.minY, width: frame.width - 252 - 20, height: frame.height)
+                    if layout.authenticating != (dialog != nil) { layout.authenticating = dialog != nil }
                     if layout.width != list.width { layout.width = list.width }
                     host.layoutSubtreeIfNeeded()
                     let size = host.fittingSize
-                    p.setFrame(NSRect(x: list.minX - GuideLayout.inset, y: frame.minY + 8,
-                                      width: size.width, height: size.height), display: true)
+                    var origin = CGPoint(x: list.minX - GuideLayout.inset, y: frame.minY + 8)
+                    if let dialog {
+                        origin = CGPoint(x: dialog.midX - size.width / 2, y: dialog.minY - 10 - size.height + GuideLayout.inset)
+                    }
+                    p.setFrame(NSRect(origin: origin, size: size), display: true)
                     panel?.orderFrontRegardless()
                 } else {
                     panel?.orderOut(nil)
@@ -191,6 +197,36 @@ enum PermissionGuide {
         timer = nil
         panel?.orderOut(nil)
         panel = nil
+    }
+
+    /// The system's Touch ID / password dialog for System Settings, in Cocoa coordinates.
+    private static func authDialogFrame(near settings: NSRect) -> NSRect? {
+        let screenTop = NSScreen.screens.first?.frame.maxY ?? 0
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[CFString: Any]] ?? []
+        let cgSettings = CGRect(x: settings.minX, y: screenTop - settings.maxY, width: settings.width, height: settings.height)
+        guard let rect = authDialog(in: windows, over: cgSettings, ownPID: ProcessInfo.processInfo.processIdentifier,
+                                    isRegularApp: { NSRunningApplication(processIdentifier: $0)?.activationPolicy == .regular })
+        else { return nil }
+        return NSRect(x: rect.minX, y: screenTop - rect.maxY, width: rect.width, height: rect.height)
+    }
+
+    nonisolated static let authProcessNames: Set<String> = ["SecurityAgent", "coreautha", "LocalAuthenticationRemoteService"]
+
+    /// Finds the dialog in a window list (CG coordinates): one of the known authentication processes, or failing
+    /// that a dialog-sized window of a background process floating over the Settings window.
+    nonisolated static func authDialog(in windows: [[CFString: Any]], over settings: CGRect, ownPID: pid_t,
+                           isRegularApp: (pid_t) -> Bool) -> CGRect? {
+        for w in windows {
+            guard let pid = w[kCGWindowOwnerPID] as? pid_t, pid != ownPID,
+                  let dict = w[kCGWindowBounds], let rect = CGRect(dictionaryRepresentation: dict as! CFDictionary),
+                  (150...700).contains(rect.width), (100...600).contains(rect.height) else { continue }
+            let owner = w[kCGWindowOwnerName] as? String ?? ""
+            if authProcessNames.contains(owner) { return rect }
+            let layer = w[kCGWindowLayer] as? Int ?? 0
+            if layer > 0, layer < 1000, owner != "Window Server", rect.intersects(settings), !isRegularApp(pid) { return rect }
+        }
+        return nil
     }
 
     /// The System Settings window, if it is the topmost window outside Shocrot, in Cocoa coordinates.
@@ -220,6 +256,8 @@ enum PermissionGuide {
 private final class GuideLayout: ObservableObject {
     static let inset: CGFloat = 12 // transparent margin around the card for its shadow
     @Published var width: CGFloat = 380
+    /// The system's authentication dialog is up; the card shrinks to a caption under it.
+    @Published var authenticating = false
 }
 
 private struct PermissionGuideView: View {
@@ -234,19 +272,21 @@ private struct PermissionGuideView: View {
     /// Concentric with the card: the tile's corners follow the card's at the same distance.
     private static let tileRadius = cornerRadius - padding
 
+    private var collapsed: Bool { dragged || layout.authenticating }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
                 // Points at the app list above; once the tile is in, the next step happens in the system's own dialog.
-                Image(systemName: dragged ? "lock.shield" : "arrow.up")
+                Image(systemName: collapsed ? "lock.shield" : "arrow.up")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(dragged ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
+                    .foregroundStyle(collapsed ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
                     .frame(width: 26)
-                    .symbolEffect(.bounce.up, options: .repeat(.periodic(delay: 1.2)), isActive: !dragged)
+                    .symbolEffect(.bounce.up, options: .repeat(.periodic(delay: 1.2)), isActive: !collapsed)
                     .contentTransition(.symbolEffect(.replace))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("开启“\(permission.title)”").font(.system(size: 13, weight: .semibold))
-                    Text(dragged ? "在系统弹窗中验证，然后确认开关已打开" : "拖进上方列表，或打开它的开关")
+                    Text(collapsed ? "在系统弹窗中验证，然后确认开关已打开" : "拖进上方列表，或打开它的开关")
                         .lineLimit(1).fixedSize()
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .contentTransition(.opacity)
@@ -261,7 +301,7 @@ private struct PermissionGuideView: View {
                 .help("关闭指引")
             }
 
-            if !dragged {
+            if !collapsed {
                 HStack(spacing: 10) {
                     Image(nsImage: NSApp.applicationIconImage)
                         .resizable().frame(width: 30, height: 30)
@@ -283,9 +323,10 @@ private struct PermissionGuideView: View {
                 .transition(.opacity)
             }
         }
-        .animation(.easeOut(duration: 0.2), value: dragged)
+        .animation(.easeOut(duration: 0.2), value: collapsed)
         .padding(Self.padding)
-        .frame(width: max(layout.width, 380))
+        // Under the dialog the card fits its text; over the list it matches the list's width.
+        .frame(width: layout.authenticating ? nil : max(layout.width, 380))
         // Tinted so whatever sits behind (e.g. a blue button) doesn't bleed through the glass.
         .glassEffect(.regular.tint(Color(nsColor: .windowBackgroundColor).opacity(0.7)),
                      in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
