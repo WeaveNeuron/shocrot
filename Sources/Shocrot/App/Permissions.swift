@@ -170,10 +170,9 @@ enum PermissionGuide {
                 let settingsRunning = !NSRunningApplication.runningApplications(withBundleIdentifier: settingsBundleID).isEmpty
                 if !settingsRunning && Date().timeIntervalSince(started) > 5 { close(); return }
                 // Follow the System Settings window, and step aside while another app is on top of it.
-                if let frame = settingsWindowFrame() {
-                    // While the system asks for Touch ID or a password, sit just under its dialog as a caption;
+                if let (frame, dialog) = settingsGeometry() {
+                    // While System Settings shows a dialog (Touch ID or password), sit just under it as a caption;
                     // otherwise line up with the app list, which fills the pane right of the fixed-width sidebar.
-                    let dialog = authDialogFrame(near: frame)
                     let list = NSRect(x: frame.minX + 252, y: frame.minY, width: frame.width - 252 - 20, height: frame.height)
                     if layout.authenticating != (dialog != nil) { layout.authenticating = dialog != nil }
                     if layout.width != list.width { layout.width = list.width }
@@ -199,56 +198,46 @@ enum PermissionGuide {
         panel = nil
     }
 
-    /// The system's Touch ID / password dialog for System Settings, in Cocoa coordinates.
-    private static func authDialogFrame(near settings: NSRect) -> NSRect? {
-        let screenTop = NSScreen.screens.first?.frame.maxY ?? 0
-        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-            as? [[CFString: Any]] ?? []
-        let cgSettings = CGRect(x: settings.minX, y: screenTop - settings.maxY, width: settings.width, height: settings.height)
-        guard let rect = authDialog(in: windows, over: cgSettings, ownPID: ProcessInfo.processInfo.processIdentifier,
-                                    isRegularApp: { NSRunningApplication(processIdentifier: $0)?.activationPolicy == .regular })
-        else { return nil }
-        return NSRect(x: rect.minX, y: screenTop - rect.maxY, width: rect.width, height: rect.height)
-    }
-
-    nonisolated static let authProcessNames: Set<String> = ["SecurityAgent", "coreautha", "LocalAuthenticationRemoteService"]
-
-    /// Finds the dialog in a window list (CG coordinates): one of the known authentication processes, or failing
-    /// that a dialog-sized window of a background process floating over the Settings window.
-    nonisolated static func authDialog(in windows: [[CFString: Any]], over settings: CGRect, ownPID: pid_t,
-                           isRegularApp: (pid_t) -> Bool) -> CGRect? {
-        for w in windows {
-            guard let pid = w[kCGWindowOwnerPID] as? pid_t, pid != ownPID,
-                  let dict = w[kCGWindowBounds], let rect = CGRect(dictionaryRepresentation: dict as! CFDictionary),
-                  (150...700).contains(rect.width), (100...600).contains(rect.height) else { continue }
-            let owner = w[kCGWindowOwnerName] as? String ?? ""
-            if authProcessNames.contains(owner) { return rect }
-            let layer = w[kCGWindowLayer] as? Int ?? 0
-            if layer > 0, layer < 1000, owner != "Window Server", rect.intersects(settings), !isRegularApp(pid) { return rect }
-        }
-        return nil
-    }
-
-    /// The System Settings window, if it is the topmost window outside Shocrot, in Cocoa coordinates.
-    /// (Window bounds and owners are readable without any permission.)
-    private static func settingsWindowFrame() -> NSRect? {
-        let me = ProcessInfo.processInfo.processIdentifier
+    /// System Settings' main window and the dialog it shows on top, if any, in Cocoa coordinates;
+    /// nil while another app is in front of it.
+    private static func settingsGeometry() -> (window: NSRect, dialog: NSRect?)? {
         guard let pid = NSRunningApplication.runningApplications(withBundleIdentifier: settingsBundleID)
                 .first?.processIdentifier,
               let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
                 as? [[CFString: Any]],
-              // Skip our own windows and overlays of background utilities (no Dock icon).
-              let top = windows.first(where: { w in
-                  guard (w[kCGWindowLayer] as? Int) == 0, let owner = w[kCGWindowOwnerPID] as? pid_t, owner != me
-                  else { return false }
-                  return NSRunningApplication(processIdentifier: owner)?.activationPolicy == .regular
-              }),
-              (top[kCGWindowOwnerPID] as? pid_t) == pid,
-              let dict = top[kCGWindowBounds], let rect = CGRect(dictionaryRepresentation: dict as! CFDictionary),
-              rect.width > 200
+              let found = settingsGeometry(in: windows, settingsPID: pid, ownPID: ProcessInfo.processInfo.processIdentifier,
+                                           isRegularApp: { NSRunningApplication(processIdentifier: $0)?.activationPolicy == .regular })
         else { return nil }
         let screenTop = NSScreen.screens.first?.frame.maxY ?? 0
-        return NSRect(x: rect.minX, y: screenTop - rect.maxY, width: rect.width, height: rect.height)
+        let flip = { (r: CGRect) in NSRect(x: r.minX, y: screenTop - r.maxY, width: r.width, height: r.height) }
+        return (flip(found.window), found.dialog.map(flip))
+    }
+
+    /// Authentication UI that may live outside System Settings on some systems.
+    nonisolated static let authProcessNames: Set<String> = ["SecurityAgent", "coreautha", "LocalAuthenticationRemoteService"]
+
+    /// Reads a front-to-back window list (CG coordinates). The topmost ordinary window outside Shocrot must be
+    /// System Settings'. Its dialogs (the Touch ID / password prompt) are its own small windows in front of the
+    /// main one, so the main window is the first large one, and a small one before it is the dialog.
+    nonisolated static func settingsGeometry(in windows: [[CFString: Any]], settingsPID: pid_t, ownPID: pid_t,
+                                             isRegularApp: (pid_t) -> Bool) -> (window: CGRect, dialog: CGRect?)? {
+        var dialog: CGRect?
+        for w in windows {
+            guard let owner = w[kCGWindowOwnerPID] as? pid_t, owner != ownPID,
+                  let dict = w[kCGWindowBounds], let rect = CGRect(dictionaryRepresentation: dict as! CFDictionary)
+            else { continue }
+            let isDialogSized = (150...700).contains(rect.width) && (100...600).contains(rect.height)
+            if authProcessNames.contains(w[kCGWindowOwnerName] as? String ?? "") {
+                if isDialogSized, dialog == nil { dialog = rect }
+                continue
+            }
+            // Skip menu bar items, overlays and background utilities (no Dock icon).
+            guard (w[kCGWindowLayer] as? Int) == 0, isRegularApp(owner) else { continue }
+            guard owner == settingsPID else { return nil } // another app is on top
+            if rect.width >= 480, rect.height >= 400 { return (rect, dialog) }
+            if isDialogSized, dialog == nil { dialog = rect }
+        }
+        return nil
     }
 }
 
