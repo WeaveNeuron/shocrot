@@ -352,3 +352,14 @@ struct TransformTests {
         #expect(windows.first?.title == "App")
     }
 }
+
+@Suite struct CaptureFocusTests {
+    @Test func onlyWindowOpeningOutcomesKeepFocus() {
+        #expect(CaptureOutcome.saveAs.opensFocusedWindow(ocrShowsWindow: false))
+        #expect(CaptureOutcome.ocr.opensFocusedWindow(ocrShowsWindow: true))
+        #expect(!CaptureOutcome.ocr.opensFocusedWindow(ocrShowsWindow: false))
+        for outcome in [CaptureOutcome.copy, .save, .pin, .translate, .scroll, .record] {
+            #expect(!outcome.opensFocusedWindow(ocrShowsWindow: true))
+        }
+    }
+}

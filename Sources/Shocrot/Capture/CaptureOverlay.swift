@@ -7,6 +7,16 @@ enum CaptureMode { case area, ocr, translate }
 /// What the user decided to do with a finished selection.
 enum CaptureOutcome {
     case copy, save, saveAs, pin, ocr, translate, scroll, record
+
+    /// Whether the follow-up opens a window of ours that takes focus (the save panel, the OCR window).
+    /// Handing focus back to the previous app first would race with that window's own activation.
+    func opensFocusedWindow(ocrShowsWindow: Bool) -> Bool {
+        switch self {
+        case .saveAs: return true
+        case .ocr: return ocrShowsWindow
+        default: return false
+        }
+    }
 }
 
 /// The product of a finished selection.
@@ -124,19 +134,19 @@ final class CaptureSession {
 
     func finish(_ outcome: CaptureOutcome, from view: OverlayView) {
         guard let result = view.makeResult() else { cancel(); return }
-        close()
+        close(restoringFocus: !outcome.opensFocusedWindow(ocrShowsWindow: Settings.shared.ocrShowWindow))
         // Let the overlay disappear before showing follow-up UI.
         DispatchQueue.main.async { self.completion(outcome, result) }
     }
 
-    private func close() {
+    private func close(restoringFocus: Bool = true) {
         views.forEach { $0.teardown() }
         panels.forEach { $0.orderOut(nil); $0.close() }
         panels.removeAll()
         views.removeAll()
         CaptureSession.current = nil
         NSCursor.arrow.set()
-        if let previousApp, !previousApp.isTerminated { previousApp.activate() }
+        if restoringFocus, let previousApp, !previousApp.isTerminated { previousApp.activate() }
     }
 }
 
