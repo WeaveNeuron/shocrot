@@ -146,7 +146,11 @@ final class CaptureSession {
         views.removeAll()
         CaptureSession.current = nil
         NSCursor.arrow.set()
-        if restoringFocus, let previousApp, !previousApp.isTerminated { previousApp.activate() }
+        if !restoringFocus {
+            FocusReturn.remember(previousApp)
+        } else if let previousApp, !previousApp.isTerminated {
+            previousApp.activate()
+        }
     }
 }
 

@@ -56,6 +56,7 @@ enum OCRWindow {
         windows.append(window)
         NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in
             windows.removeAll { $0 === window }
+            FocusReturn.windowDidGoAway()
         }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)

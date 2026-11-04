@@ -183,6 +183,7 @@ enum ImageOutput {
         panel.canCreateDirectories = true
         NSApp.activate()
         panel.begin { response in
+            FocusReturn.windowDidGoAway()
             guard response == .OK, let url = panel.url else { return }
             let format: ImageFormat = ["jpg", "jpeg"].contains(url.pathExtension.lowercased()) ? .jpeg : .png
             do {

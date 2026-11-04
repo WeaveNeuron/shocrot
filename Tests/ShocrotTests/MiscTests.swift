@@ -386,3 +386,12 @@ struct TransformTests {
         #expect(MosaicSource(source: image(), blockSize: 8).get() != nil)
     }
 }
+
+@Suite struct FocusReturnTests {
+    @Test func returnsOnlyWhenShocrotIsLeftWithNothingToTypeInto() {
+        #expect(FocusReturn.shouldReturn(appIsActive: true, hasTitledWindow: false, targetTerminated: false))
+        #expect(!FocusReturn.shouldReturn(appIsActive: false, hasTitledWindow: false, targetTerminated: false))
+        #expect(!FocusReturn.shouldReturn(appIsActive: true, hasTitledWindow: true, targetTerminated: false))
+        #expect(!FocusReturn.shouldReturn(appIsActive: true, hasTitledWindow: false, targetTerminated: true))
+    }
+}
