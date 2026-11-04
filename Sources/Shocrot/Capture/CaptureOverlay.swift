@@ -27,6 +27,13 @@ struct CaptureResult {
     let scale: CGFloat
 }
 
+/// A window the selection can snap to, in the overlay view's coordinates.
+struct SnapWindow {
+    let rect: CGRect
+    let id: CGWindowID
+    let pid: pid_t
+}
+
 /// Borderless, non-activating panel so we can take key events without stealing focus from the frontmost app.
 final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -43,15 +50,19 @@ final class CaptureSession {
     /// The app that had focus before the overlay took it, to give it back afterwards.
     private var previousApp: NSRunningApplication?
     private let completion: (CaptureOutcome, CaptureResult) -> Void
+    /// ⌥-click on a window: capture that window on its own (after the overlay has closed).
+    var onWindowCapture: ((CGWindowID, NSScreen?) -> Void)?
 
     static var isActive: Bool { current != nil }
 
+    @discardableResult
     static func start(mode: CaptureMode, snapshots: [ScreenSnapshot], windows: [WindowInfo],
-                      completion: @escaping (CaptureOutcome, CaptureResult) -> Void) {
-        guard current == nil else { return }
+                      completion: @escaping (CaptureOutcome, CaptureResult) -> Void) -> CaptureSession? {
+        guard current == nil else { return nil }
         let session = CaptureSession(mode: mode, snapshots: snapshots, windows: windows, completion: completion)
         current = session
         session.show()
+        return session
     }
 
     private init(mode: CaptureMode, snapshots: [ScreenSnapshot], windows: [WindowInfo],
@@ -72,10 +83,10 @@ final class CaptureSession {
             panel.animationBehavior = .none
             panel.setFrame(snap.screen.frame, display: false)
 
-            let local = windows.compactMap { w -> CGRect? in
+            let local = windows.compactMap { w -> SnapWindow? in
                 let r = w.frame.offsetBy(dx: -snap.screen.frame.minX, dy: -snap.screen.frame.minY)
                     .intersection(CGRect(origin: .zero, size: snap.screen.frame.size))
-                return r.isNull || r.width < 20 || r.height < 20 ? nil : r.integral
+                return r.isNull || r.width < 20 || r.height < 20 ? nil : SnapWindow(rect: r.integral, id: w.id, pid: w.pid)
             }
             let container = NSView(frame: CGRect(origin: .zero, size: snap.screen.frame.size))
             container.wantsLayer = true
@@ -139,6 +150,12 @@ final class CaptureSession {
         DispatchQueue.main.async { self.completion(outcome, result) }
     }
 
+    func captureWindow(_ window: SnapWindow, from view: OverlayView) {
+        let screen = view.window?.screen
+        close()
+        DispatchQueue.main.async { self.onWindowCapture?(window.id, screen) }
+    }
+
     private func close(restoringFocus: Bool = true) {
         views.forEach { $0.teardown() }
         panels.forEach { $0.orderOut(nil); $0.close() }
@@ -167,7 +184,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private typealias Handle = SelectionHandle
 
     private let snapshot: ScreenSnapshot
-    private let windowRects: [CGRect]
+    private let windowRects: [SnapWindow]
+    private var hoverWindow: SnapWindow?
     private let mode: CaptureMode
     private weak var session: CaptureSession?
     private let state = OverlayState.shared
@@ -189,7 +207,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private lazy var mosaic = MosaicSource(source: snapshot.image, blockSize: 9 * scale)
     private lazy var renderer = AnnotationRenderer(mosaicImage: { [weak self] in self?.mosaic.get() }, backdropRect: bounds)
 
-    init(frame: CGRect, snapshot: ScreenSnapshot, windowRects: [CGRect], mode: CaptureMode, session: CaptureSession) {
+    init(frame: CGRect, snapshot: ScreenSnapshot, windowRects: [SnapWindow], mode: CaptureMode, session: CaptureSession) {
         self.snapshot = snapshot
         self.windowRects = windowRects
         self.mode = mode
@@ -228,7 +246,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     func reset() {
         commitText()
         selection = nil
-        hoverRect = nil
+        hoverRect = nil; hoverWindow = nil
         mouseLocation = nil
         annotations.removeAll()
         history.removeAll()
@@ -521,7 +539,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     func updateHover() {
         guard selection == nil, let p = mouseLocation else { return }
-        hoverRect = windowRects.first { $0.contains(p) }
+        hoverWindow = windowRects.first { $0.rect.contains(p) }
+        hoverRect = hoverWindow?.rect
         needsDisplay = true
     }
 
@@ -535,7 +554,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     override func mouseExited(with event: NSEvent) {
         mouseLocation = nil
-        if selection == nil { hoverRect = nil }
+        if selection == nil { hoverRect = nil; hoverWindow = nil }
         needsDisplay = true
     }
 
@@ -622,7 +641,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
                     end = CGPoint(x: start.x + (p.x >= start.x ? side : -side), y: start.y + (p.y >= start.y ? side : -side))
                 }
                 selection = rect(start, end).integral
-                hoverRect = nil
+                hoverRect = nil; hoverWindow = nil
             }
         case let .moving(anchor, original):
             let r = SelectionGeometry.clamped(original.offsetBy(dx: p.x - anchor.x, dy: p.y - anchor.y), in: bounds)
@@ -647,6 +666,11 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     override func mouseUp(with event: NSEvent) {
         switch phase {
         case let .creating(_, dragged):
+            if !dragged, mode == .area, event.modifierFlags.contains(.option), let w = hoverWindow {
+                phase = .idle
+                session?.captureWindow(w, from: self)
+                return
+            }
             if !dragged {
                 selection = hoverRect ?? bounds
             }

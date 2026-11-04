@@ -11,14 +11,18 @@ struct ScreenSnapshot {
 struct WindowInfo {
     let frame: CGRect
     let title: String
+    var id: CGWindowID = 0
+    var pid: pid_t = 0
 }
 
 enum CaptureError: LocalizedError {
     case permissionDenied
     case noDisplay
+    case windowGone
 
     var errorDescription: String? {
         switch self {
+        case .windowGone: return "这个窗口已经关闭或隐藏，无法单独截取。"
         case .permissionDenied: return "Shocrot 需要“屏幕录制”权限才能截图。"
         case .noDisplay: return "没有找到可截取的显示器。"
         }
@@ -63,6 +67,24 @@ enum ScreenCapturer {
         return result
     }
 
+    /// One window on its own: what is behind or in front of it is left out, the background stays transparent
+    /// and the window keeps its shadow. Returns the image and its pixels-per-point scale.
+    static func captureWindow(_ id: CGWindowID) async throws -> (CGImage, CGFloat) {
+        guard hasPermission else { throw CaptureError.permissionDenied }
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        guard let window = content.windows.first(where: { $0.windowID == id }) else { throw CaptureError.windowGone }
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        let scale = CGFloat(filter.pointPixelScale)
+        let config = SCStreamConfiguration()
+        config.width = Int((filter.contentRect.width * scale).rounded())
+        config.height = Int((filter.contentRect.height * scale).rounded())
+        config.showsCursor = false
+        config.ignoreShadowsSingleWindow = false
+        config.shouldBeOpaque = false
+        config.captureResolution = .best
+        return (try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config), scale)
+    }
+
     #if DEBUG
     /// Debug builds only: SHOCROT_DEMO_IMAGE=<png> fakes the screen with that image, so the overlay
     /// can be exercised without Screen Recording permission.
@@ -102,7 +124,8 @@ enum ScreenCapturer {
             if owner == "Window Server" || owner == "Dock" && layer != 0 { return nil }
             // CG uses a top-left origin relative to the primary display; flip to AppKit.
             let flipped = CGRect(x: bounds.minX, y: primaryHeight - bounds.maxY, width: bounds.width, height: bounds.height)
-            return WindowInfo(frame: flipped, title: info[kCGWindowName as String] as? String ?? owner)
+            return WindowInfo(frame: flipped, title: info[kCGWindowName as String] as? String ?? owner,
+                              id: CGWindowID(info[kCGWindowNumber as String] as? Int ?? 0), pid: pid)
         }
     }
 }

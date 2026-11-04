@@ -222,6 +222,7 @@ private struct ShortcutSettings: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("截图时的快捷操作") {
+                shortcutRow("选中窗口 / 单独截取窗口", "单击  ⌥单击")
                 shortcutRow("复制并完成", "↩  ⌘C  双击")
                 shortcutRow("保存 / 另存为", "⌘S  ⇧⌘S")
                 shortcutRow("识别文字 / 翻译 / 贴图", "⌘T  ⌘D  ⌘P")

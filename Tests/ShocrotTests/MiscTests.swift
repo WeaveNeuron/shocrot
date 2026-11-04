@@ -341,6 +341,7 @@ struct TransformTests {
     private func info(pid: Int32, layer: Int = 0, owner: String = "App", x: CGFloat = 10, y: CGFloat = 20,
                       w: CGFloat = 300, h: CGFloat = 200) -> [String: Any] {
         [kCGWindowOwnerPID as String: pid, kCGWindowLayer as String: layer, kCGWindowOwnerName as String: owner,
+         kCGWindowNumber as String: Int(pid) * 100,
          kCGWindowBounds as String: CGRect(x: x, y: y, width: w, height: h).dictionaryRepresentation]
     }
 
@@ -350,6 +351,7 @@ struct TransformTests {
         let windows = ScreenCapturer.windows(from: list, primaryHeight: 1000, ownPID: 99)
         #expect(windows.map(\.frame) == [CGRect(x: 10, y: 780, width: 300, height: 200)])
         #expect(windows.first?.title == "App")
+        #expect(windows.first?.id == 100 && windows.first?.pid == 1) // for ⌥-click window capture
     }
 }
 

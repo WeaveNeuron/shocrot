@@ -235,9 +235,10 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                 let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
                 let windows = Task.detached(priority: .userInitiated) { ScreenCapturer.visibleWindows(primaryHeight: primaryHeight) }
                 let snapshots = try await ScreenCapturer.captureAllScreens()
-                CaptureSession.start(mode: mode, snapshots: snapshots, windows: await windows.value) { [weak self] outcome, result in
-                    self?.handle(outcome, result: result)
+                let session = CaptureSession.start(mode: mode, snapshots: snapshots, windows: await windows.value) {
+                    [weak self] outcome, result in self?.handle(outcome, result: result)
                 }
+                session?.onWindowCapture = { [weak self] id, screen in self?.captureWindow(id, on: screen) }
             } catch {
                 Feedback.error(error)
             }
@@ -279,6 +280,26 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                 CapturePreview.show(image: snap.image, scale: scale, status: "已复制并保存", savedURL: url, on: snap.screen)
             } catch {
                 isPreparingCapture = false
+                Feedback.error(error)
+            }
+        }
+    }
+
+    /// ⌥-click in the overlay: the window on its own, transparent background and shadow included.
+    private func captureWindow(_ id: CGWindowID, on screen: NSScreen?) {
+        Task { @MainActor in
+            do {
+                let (image, scale) = try await ScreenCapturer.captureWindow(id)
+                Feedback.shutter()
+                HistoryStore.shared.add(image, scale: scale)
+                if Settings.shared.afterCapture == .save {
+                    let url = try await ImageOutput.saveInBackground(image, scale: scale)
+                    CapturePreview.show(image: image, scale: scale, status: "已保存窗口", savedURL: url, on: screen)
+                } else {
+                    ImageOutput.copy(image, scale: scale)
+                    CapturePreview.show(image: image, scale: scale, status: "已复制窗口", savedURL: nil, on: screen)
+                }
+            } catch {
                 Feedback.error(error)
             }
         }
