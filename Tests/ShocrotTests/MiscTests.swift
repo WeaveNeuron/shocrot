@@ -448,3 +448,29 @@ struct TransformTests {
         #expect(flagged.accessibilityDescription?.contains("屏幕录制") == true)
     }
 }
+
+@Suite struct ElementSnappingTests {
+    private let window = CGRect(x: 100, y: 100, width: 800, height: 600)
+
+    @Test func levelsGoOutwardAndEndWithTheWindow() {
+        let button = CGRect(x: 120, y: 120, width: 60, height: 24)
+        let toolbar = CGRect(x: 100, y: 110, width: 800, height: 44)
+        let levels = ElementProbe.levels([button, toolbar, window], window: window)
+        #expect(levels == [button, toolbar, window])
+    }
+
+    @Test func dropsTinyDuplicateAndNonEnclosingFrames() {
+        let label = CGRect(x: 130, y: 130, width: 40, height: 16)
+        let sameAsLabel = CGRect(x: 129, y: 129, width: 42, height: 18) // its wrapper, 1 px larger
+        let elsewhere = CGRect(x: 600, y: 600, width: 100, height: 100) // a parent that doesn't contain it
+        let dot = CGRect(x: 131, y: 131, width: 4, height: 4)
+        let levels = ElementProbe.levels([dot, label, sameAsLabel, elsewhere], window: window)
+        #expect(levels == [label, window])
+    }
+
+    @Test func clipsToTheWindowAndWorksWithNothingFound() {
+        let overhanging = CGRect(x: 50, y: 150, width: 200, height: 100)
+        #expect(ElementProbe.levels([overhanging], window: window) == [CGRect(x: 100, y: 150, width: 150, height: 100), window])
+        #expect(ElementProbe.levels([], window: window) == [window])
+    }
+}

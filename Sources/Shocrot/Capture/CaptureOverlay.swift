@@ -186,6 +186,13 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private let snapshot: ScreenSnapshot
     private let windowRects: [SnapWindow]
     private var hoverWindow: SnapWindow?
+    /// How far into the hovered window the snap goes: 0 is the whole window, each wheel step one element further in.
+    private var snapDepth = 0
+    /// Element frames around the pointer, innermost first and the window last (empty until probed).
+    private var snapLevels: [CGRect] = []
+    private var scrollAccumulator: CGFloat = 0
+    /// The wheel was used without Accessibility access, so the hover badge says what is missing.
+    private var wheelNeedsAccess = false
     private let mode: CaptureMode
     private weak var session: CaptureSession?
     private let state = OverlayState.shared
@@ -247,6 +254,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         commitText()
         selection = nil
         hoverRect = nil; hoverWindow = nil
+        snapDepth = 0
+        snapLevels = []
         mouseLocation = nil
         annotations.removeAll()
         history.removeAll()
@@ -313,6 +322,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             ctx.setStrokeColor(NSColor.controlAccentColor.cgColor)
             ctx.setLineWidth(2)
             ctx.stroke(hoverRect.insetBy(dx: 1, dy: 1))
+            if !phaseIsCreating { drawBadge(hoverBadgeText(for: hoverRect), above: hoverRect, in: ctx) }
         }
 
         if showsGuides, let p = mouseLocation { drawGuides(at: p, in: ctx) }
@@ -374,8 +384,22 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             }
         }
 
-        // Size badge (in pixels).
-        let text = "\(Int(round(r.width * scale))) × \(Int(round(r.height * scale)))"
+        drawBadge("\(Int(round(r.width * scale))) × \(Int(round(r.height * scale)))", above: r, in: ctx)
+    }
+
+    /// Size of the hovered window or element, plus what a click can do with it.
+    private func hoverBadgeText(for r: CGRect) -> String {
+        var parts = ["\(Int(round(r.width * scale))) × \(Int(round(r.height * scale)))"]
+        if wheelNeedsAccess {
+            parts.append("滚轮选择控件需要“辅助功能”权限")
+        } else if snapDepth == 0, mode == .area {
+            parts.append("⌥单击 单独截取窗口")
+        }
+        return parts.joined(separator: "  ·  ")
+    }
+
+    /// A small dark pill just above `r` (inside it when there is no room), e.g. the selection size.
+    private func drawBadge(_ text: String, above r: CGRect, in ctx: CGContext) {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.roundedMonospaced(size: 11, weight: .semibold),
             .foregroundColor: NSColor.white,
@@ -539,9 +563,59 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     func updateHover() {
         guard selection == nil, let p = mouseLocation else { return }
-        hoverWindow = windowRects.first { $0.rect.contains(p) }
-        hoverRect = hoverWindow?.rect
+        let window = windowRects.first { $0.rect.contains(p) }
+        if window?.id != hoverWindow?.id { snapLevels = [] }
+        hoverWindow = window
+        applySnapDepth()
+        if snapDepth > 0 { probeElements(at: p) }
+    }
+
+    private func applySnapDepth() {
+        if let w = hoverWindow, snapDepth > 0, snapLevels.last == w.rect {
+            hoverRect = snapLevels[max(0, snapLevels.count - 1 - snapDepth)]
+        } else {
+            hoverRect = hoverWindow?.rect
+        }
         needsDisplay = true
+    }
+
+    /// Asks the hovered app which elements are under the pointer; the answer arrives asynchronously.
+    private func probeElements(at p: CGPoint) {
+        guard let w = hoverWindow, ElementProbe.isAvailable else { return }
+        let screen = snapshot.screen.frame
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let global = CGPoint(x: screen.minX + p.x, y: primaryHeight - (screen.minY + p.y))
+        ElementProbe.shared.frames(at: global, pid: w.pid) { [weak self] frames in
+            guard let self, self.selection == nil, self.hoverWindow?.id == w.id else { return }
+            let local = frames.map {
+                CGRect(x: $0.minX - screen.minX, y: primaryHeight - $0.maxY - screen.minY, width: $0.width, height: $0.height)
+            }
+            self.snapLevels = ElementProbe.levels(local, window: w.rect)
+            self.snapDepth = min(self.snapDepth, self.snapLevels.count - 1)
+            self.applySnapDepth()
+        }
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard selection == nil, hoverWindow != nil, let p = mouseLocation, event.momentumPhase.isEmpty else { return }
+        var step = 0
+        if event.hasPreciseScrollingDeltas {
+            scrollAccumulator += event.scrollingDeltaY
+            if abs(scrollAccumulator) >= 14 { step = scrollAccumulator > 0 ? 1 : -1; scrollAccumulator = 0 }
+        } else if event.scrollingDeltaY != 0 {
+            step = event.scrollingDeltaY > 0 ? 1 : -1
+        }
+        guard step != 0 else { return }
+        guard ElementProbe.isAvailable else {
+            wheelNeedsAccess = true
+            needsDisplay = true
+            return
+        }
+        // Until the elements are known, allow one step in; the answer clamps it.
+        let deepest = snapLevels.last == hoverWindow?.rect ? snapLevels.count - 1 : 1
+        snapDepth = min(max(snapDepth + step, 0), deepest)
+        applySnapDepth()
+        if snapDepth > 0 { probeElements(at: p) }
     }
 
     // MARK: - Mouse
