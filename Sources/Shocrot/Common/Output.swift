@@ -261,12 +261,22 @@ enum Feedback {
         toastPanel = nil
     }
 
+    /// A toast with one inline button, for a suggestion that can be taken now or ignored; it stays a little
+    /// longer and taking no action is the same as "later".
+    static func offer(_ message: String, symbol: String, action title: String, perform: @escaping () -> Void) {
+        toast(message, symbol: symbol, action: (title, {
+            hideToast()
+            perform()
+        }), duration: 6)
+    }
+
     /// A small HUD message near the top of the screen under the mouse.
-    static func toast(_ message: String, symbol: String = "checkmark.circle.fill") {
+    static func toast(_ message: String, symbol: String = "checkmark.circle.fill",
+                      action: (title: String, perform: () -> Void)? = nil, duration: TimeInterval = 1.8) {
         toastWork?.cancel()
         toastPanel?.orderOut(nil)
 
-        let host = NSHostingView(rootView: ToastView(message: message, symbol: symbol))
+        let host = NSHostingView(rootView: ToastView(message: message, symbol: symbol, action: action))
         let size = host.fittingSize
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main ?? NSScreen.screens[0]
         let frame = CGRect(x: screen.visibleFrame.midX - size.width / 2, y: screen.visibleFrame.maxY - size.height - 24,
@@ -276,7 +286,7 @@ enum Feedback {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.level = .statusBar
-        panel.ignoresMouseEvents = true
+        panel.ignoresMouseEvents = action == nil
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentView = host
         panel.alphaValue = 0
@@ -290,21 +300,40 @@ enum Feedback {
             }
         }
         toastWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
     }
 }
 
 private struct ToastView: View {
     let message: String
     let symbol: String
+    var action: (title: String, perform: () -> Void)?
+
+    private var tint: Color {
+        if symbol.contains("exclamation") { return .orange }
+        return action == nil ? .green : .accentColor
+    }
 
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: symbol)
-                .foregroundStyle(symbol.contains("exclamation") ? Color.orange : Color.green)
+                .foregroundStyle(tint)
             Text(message)
                 .lineLimit(2)
                 .frame(maxWidth: 360, alignment: .leading)
+            if let action {
+                // Drawn by hand: the system prominent style turns grey while Shocrot isn't the active app.
+                Button(action: action.perform) {
+                    Text(action.title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Color.accentColor, in: Capsule(style: .continuous))
+                        .contentShape(Capsule(style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 4)
+            }
         }
         .font(.system(size: 13, weight: .medium))
         .padding(.horizontal, 16)
@@ -314,5 +343,7 @@ private struct ToastView: View {
         .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
         .padding(12)
         .fixedSize()
+        // The panel never becomes key; without this the button would look disabled.
+        .environment(\.controlActiveState, .key)
     }
 }

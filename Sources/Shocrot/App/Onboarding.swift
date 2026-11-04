@@ -55,10 +55,9 @@ struct OnboardingView: View {
             }
             .padding(.top, 22)
 
+            // Only what nothing works without; Accessibility is asked for when a feature first needs it.
             card("权限") {
-                VStack(spacing: 12) {
-                    ForEach(Permission.allCases) { PermissionRow($0) }
-                }
+                PermissionRow(.screenRecording)
             }
             .padding(.top, 14)
 

@@ -156,7 +156,20 @@ final class CaptureSession {
         DispatchQueue.main.async { self.onWindowCapture?(window.id, screen) }
     }
 
+    /// Offered at most once per launch, and only to someone who just reached for the feature.
+    private static var offeredAccessibility = false
+
     private func close(restoringFocus: Bool = true) {
+        if views.contains(where: \.wheelNeedsAccess), !Self.offeredAccessibility {
+            Self.offeredAccessibility = true
+            // After the overlay and whatever follows the capture (the preview card) are up.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                Feedback.offer("开启“辅助功能”后，截图时可用滚轮选中窗口里的控件",
+                               symbol: "cursorarrow.rays", action: "开启") {
+                    MainActor.assumeIsolated { Permission.accessibility.request() }
+                }
+            }
+        }
         views.forEach { $0.teardown() }
         panels.forEach { $0.orderOut(nil); $0.close() }
         panels.removeAll()
@@ -192,7 +205,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private var snapLevels: [CGRect] = []
     private var scrollAccumulator: CGFloat = 0
     /// The wheel was used without Accessibility access, so the hover badge says what is missing.
-    private var wheelNeedsAccess = false
+    private(set) var wheelNeedsAccess = false
     private let mode: CaptureMode
     private weak var session: CaptureSession?
     private let state = OverlayState.shared
