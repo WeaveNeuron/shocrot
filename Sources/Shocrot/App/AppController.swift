@@ -195,8 +195,11 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         Task { @MainActor in
             defer { isPreparingCapture = false }
             do {
+                // The window list for snapping is read off the main thread while the screens are captured.
+                let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+                let windows = Task.detached(priority: .userInitiated) { ScreenCapturer.visibleWindows(primaryHeight: primaryHeight) }
                 let snapshots = try await ScreenCapturer.captureAllScreens()
-                CaptureSession.start(mode: mode, snapshots: snapshots) { [weak self] outcome, result in
+                CaptureSession.start(mode: mode, snapshots: snapshots, windows: await windows.value) { [weak self] outcome, result in
                     self?.handle(outcome, result: result)
                 }
             } catch {

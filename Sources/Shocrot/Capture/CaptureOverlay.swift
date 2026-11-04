@@ -36,18 +36,18 @@ final class CaptureSession {
 
     static var isActive: Bool { current != nil }
 
-    static func start(mode: CaptureMode, snapshots: [ScreenSnapshot],
+    static func start(mode: CaptureMode, snapshots: [ScreenSnapshot], windows: [WindowInfo],
                       completion: @escaping (CaptureOutcome, CaptureResult) -> Void) {
         guard current == nil else { return }
-        let session = CaptureSession(mode: mode, snapshots: snapshots, completion: completion)
+        let session = CaptureSession(mode: mode, snapshots: snapshots, windows: windows, completion: completion)
         current = session
         session.show()
     }
 
-    private init(mode: CaptureMode, snapshots: [ScreenSnapshot], completion: @escaping (CaptureOutcome, CaptureResult) -> Void) {
+    private init(mode: CaptureMode, snapshots: [ScreenSnapshot], windows: [WindowInfo],
+                 completion: @escaping (CaptureOutcome, CaptureResult) -> Void) {
         self.mode = mode
         self.completion = completion
-        let windows = ScreenCapturer.visibleWindows()
         for snap in snapshots {
             let panel = OverlayPanel(contentRect: snap.screen.frame, styleMask: [.borderless, .nonactivatingPanel],
                                      backing: .buffered, defer: false)

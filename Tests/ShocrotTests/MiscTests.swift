@@ -336,3 +336,19 @@ struct TransformTests {
         #expect(HotKey(event: event([], kVK_F5)) != nil)
     }
 }
+
+@Suite struct WindowListTests {
+    private func info(pid: Int32, layer: Int = 0, owner: String = "App", x: CGFloat = 10, y: CGFloat = 20,
+                      w: CGFloat = 300, h: CGFloat = 200) -> [String: Any] {
+        [kCGWindowOwnerPID as String: pid, kCGWindowLayer as String: layer, kCGWindowOwnerName as String: owner,
+         kCGWindowBounds as String: CGRect(x: x, y: y, width: w, height: h).dictionaryRepresentation]
+    }
+
+    @Test func flipsToAppKitAndDropsOwnTinyAndSystemWindows() {
+        let list = [info(pid: 1), info(pid: 99), info(pid: 2, w: 30), info(pid: 3, owner: "Window Server"),
+                    info(pid: 4, layer: 2000)]
+        let windows = ScreenCapturer.windows(from: list, primaryHeight: 1000, ownPID: 99)
+        #expect(windows.map(\.frame) == [CGRect(x: 10, y: 780, width: 300, height: 200)])
+        #expect(windows.first?.title == "App")
+    }
+}

@@ -82,13 +82,16 @@ enum ScreenCapturer {
     }
     #endif
 
-    /// On-screen windows, front to back, in AppKit global coordinates.
-    static func visibleWindows() -> [WindowInfo] {
+    /// On-screen windows, front to back, in AppKit global coordinates. Safe to call off the main thread;
+    /// the first call of a session takes ~45 ms, so it runs alongside the screen capture.
+    static func visibleWindows(primaryHeight: CGFloat) -> [WindowInfo] {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
                 as? [[String: Any]] else { return [] }
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-        let ownPID = ProcessInfo.processInfo.processIdentifier
-        return list.compactMap { info in
+        return windows(from: list, primaryHeight: primaryHeight, ownPID: ProcessInfo.processInfo.processIdentifier)
+    }
+
+    static func windows(from list: [[String: Any]], primaryHeight: CGFloat, ownPID: Int32) -> [WindowInfo] {
+        list.compactMap { info in
             guard let layer = info[kCGWindowLayer as String] as? Int, layer < 1000,
                   let pid = info[kCGWindowOwnerPID as String] as? Int32, pid != ownPID,
                   let boundsDict = info[kCGWindowBounds as String] as? NSDictionary,
