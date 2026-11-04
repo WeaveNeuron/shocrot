@@ -229,65 +229,66 @@ private struct PermissionGuideView: View {
     @State private var hovering = false
     @State private var dragged = false
 
+    private static let cornerRadius: CGFloat = 22
+    private static let padding: CGFloat = 14
+    /// Concentric with the card: the tile's corners follow the card's at the same distance.
+    private static let tileRadius = cornerRadius - padding
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 26))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, Color.accentColor.gradient)
-                    .symbolEffect(.bounce.up, options: .repeat(.periodic(delay: 1.2)))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("开启“\(permission.title)”").font(.system(size: 14, weight: .semibold))
-                    Text(dragged ? "验证指纹后，确认开关已打开" : "拖进上方列表，或打开它的开关")
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
+                // Points at the app list above; once the tile is in, the next step happens in the system's own dialog.
+                Image(systemName: dragged ? "lock.shield" : "arrow.up")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(dragged ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.accentColor))
+                    .frame(width: 26)
+                    .symbolEffect(.bounce.up, options: .repeat(.periodic(delay: 1.2)), isActive: !dragged)
+                    .contentTransition(.symbolEffect(.replace))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("开启“\(permission.title)”").font(.system(size: 13, weight: .semibold))
+                    Text(dragged ? "在系统弹窗中验证，然后确认开关已打开" : "拖进上方列表，或打开它的开关")
                         .lineLimit(1).fixedSize()
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .contentTransition(.opacity)
-                        .animation(.easeOut(duration: 0.2), value: dragged)
                 }
                 Spacer(minLength: 0)
                 Button(action: onClose) {
-                    Image(systemName: "xmark").font(.system(size: 10, weight: .bold))
-                        .frame(width: 20, height: 20)
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
+                        .frame(width: 18, height: 18)
+                        .contentShape(.circle)
                 }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
-                .glassEffect(.regular.interactive(), in: .circle)
+                .buttonStyle(.plain).foregroundStyle(.tertiary)
                 .help("关闭指引")
             }
 
-            HStack(spacing: 12) {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable().frame(width: 34, height: 34)
-                    .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
-                Text("Shocrot").font(.system(size: 13, weight: .semibold))
-                Spacer()
-                Image(systemName: "hand.draw")
-                    .font(.system(size: 13)).foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 9)
-            .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(.background.opacity(hovering ? 0.75 : 0.55))
-                    .shadow(color: .black.opacity(hovering ? 0.22 : 0.12), radius: hovering ? 8 : 4, y: hovering ? 4 : 2)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(.white.opacity(0.12))
-            }
-            .scaleEffect(hovering ? 1.015 : 1)
-            .animation(.snappy(duration: 0.2), value: hovering)
-            .onHover { hovering = $0; (hovering ? NSCursor.openHand : NSCursor.arrow).set() }
-            .contentShape(RoundedRectangle(cornerRadius: 12))
-            .onDrag {
-                dragged = true
-                return NSItemProvider(object: Bundle.main.bundleURL as NSURL)
+            if !dragged {
+                HStack(spacing: 10) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable().frame(width: 30, height: 30)
+                    Text("Shocrot").font(.system(size: 13, weight: .medium))
+                    Spacer()
+                    Image(systemName: "hand.draw")
+                        .font(.system(size: 13)).foregroundStyle(.tertiary)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .background(.quaternary.opacity(hovering ? 1 : 0.6),
+                            in: .rect(cornerRadius: Self.tileRadius, style: .continuous))
+                .animation(.snappy(duration: 0.2), value: hovering)
+                .onHover { hovering = $0; (hovering ? NSCursor.openHand : NSCursor.arrow).set() }
+                .contentShape(.rect(cornerRadius: Self.tileRadius, style: .continuous))
+                .onDrag {
+                    dragged = true
+                    return NSItemProvider(object: Bundle.main.bundleURL as NSURL)
+                }
+                .transition(.opacity)
             }
         }
-        .padding(16)
+        .animation(.easeOut(duration: 0.2), value: dragged)
+        .padding(Self.padding)
         .frame(width: max(layout.width, 380))
         // Tinted so whatever sits behind (e.g. a blue button) doesn't bleed through the glass.
         .glassEffect(.regular.tint(Color(nsColor: .windowBackgroundColor).opacity(0.7)),
-                     in: .rect(cornerRadius: 22, style: .continuous))
+                     in: .rect(cornerRadius: Self.cornerRadius, style: .continuous))
         .padding(GuideLayout.inset)
     }
 }
