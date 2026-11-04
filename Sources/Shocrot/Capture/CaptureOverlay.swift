@@ -203,9 +203,11 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private var snapDepth = 0
     /// Element frames around the pointer, innermost first and the window last (empty until probed).
     private var snapLevels: [CGRect] = []
-    private var scrollAccumulator: CGFloat = 0
-    /// The wheel was used without Accessibility access, so the hover badge says what is missing.
+    private var wheel = WheelStepper()
+    /// The wheel was used without Accessibility access: a hint shows by the pointer, and the session offers
+    /// to turn it on once the overlay has closed.
     private(set) var wheelNeedsAccess = false
+    private var accessHintUntil: TimeInterval = 0
     private let mode: CaptureMode
     private weak var session: CaptureSession?
     private let state = OverlayState.shared
@@ -339,6 +341,10 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         }
 
         if showsGuides, let p = mouseLocation { drawGuides(at: p, in: ctx) }
+        if let p = mouseLocation, ProcessInfo.processInfo.systemUptime < accessHintUntil {
+            // Right where the user is looking, above the pointer (the magnifier sits below it).
+            drawPointerHint("滚轮选择控件需要“辅助功能”权限，截图结束后可一键开启", symbol: "cursorarrow.rays", at: p)
+        }
         if showsMagnifier, let p = mouseLocation { drawMagnifier(at: p, in: ctx) }
     }
 
@@ -403,12 +409,32 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     /// Size of the hovered window or element, plus what a click can do with it.
     private func hoverBadgeText(for r: CGRect) -> String {
         var parts = ["\(Int(round(r.width * scale))) × \(Int(round(r.height * scale)))"]
-        if wheelNeedsAccess {
-            parts.append("滚轮选择控件需要“辅助功能”权限")
-        } else if snapDepth == 0, mode == .area {
+        if snapDepth == 0, mode == .area {
             parts.append("⌥单击 单独截取窗口")
         }
         return parts.joined(separator: "  ·  ")
+    }
+
+    /// A one-off hint centered just above the pointer, a size up from the badges so it is noticed.
+    private func drawPointerHint(_ text: String, symbol: String, at p: CGPoint) {
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: NSColor.white,
+        ]
+        let size = (text as NSString).size(withAttributes: attrs)
+        let icon = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .semibold).applying(.init(paletteColors: [.controlAccentColor])))
+        let iconWidth: CGFloat = icon == nil ? 0 : 20
+        var pill = CGRect(x: 0, y: p.y + 22, width: ceil(size.width) + iconWidth + 24, height: 26)
+        pill.origin.x = min(max(p.x - pill.width / 2, 4), bounds.maxX - pill.width - 4)
+        if pill.maxY > bounds.maxY - 4 { pill.origin.y = p.y - 22 - pill.height }
+        let ctx = NSGraphicsContext.current?.cgContext
+        ctx?.saveGState()
+        ctx?.setShadow(offset: CGSize(width: 0, height: -2), blur: 8, color: NSColor.black.withAlphaComponent(0.35).cgColor)
+        NSColor(white: 0.08, alpha: 0.9).setFill()
+        NSBezierPath(roundedRect: pill, xRadius: 13, yRadius: 13).fill()
+        ctx?.restoreGState()
+        icon?.draw(in: CGRect(x: pill.minX + 11, y: pill.midY - 7, width: 15, height: 14))
+        (text as NSString).draw(at: CGPoint(x: pill.minX + 12 + iconWidth, y: pill.midY - size.height / 2), withAttributes: attrs)
     }
 
     /// A small dark pill just above `r` (inside it when there is no room), e.g. the selection size.
@@ -611,17 +637,14 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     override func scrollWheel(with event: NSEvent) {
         guard selection == nil, hoverWindow != nil, let p = mouseLocation, event.momentumPhase.isEmpty else { return }
-        var step = 0
-        if event.hasPreciseScrollingDeltas {
-            scrollAccumulator += event.scrollingDeltaY
-            if abs(scrollAccumulator) >= 14 { step = scrollAccumulator > 0 ? 1 : -1; scrollAccumulator = 0 }
-        } else if event.scrollingDeltaY != 0 {
-            step = event.scrollingDeltaY > 0 ? 1 : -1
-        }
+        let step = wheel.step(delta: event.scrollingDeltaY, precise: event.hasPreciseScrollingDeltas,
+                              phased: !event.phase.isEmpty, at: event.timestamp)
         guard step != 0 else { return }
         guard ElementProbe.isAvailable else {
             wheelNeedsAccess = true
+            accessHintUntil = ProcessInfo.processInfo.systemUptime + 2.5
             needsDisplay = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { [weak self] in self?.needsDisplay = true }
             return
         }
         // Until the elements are known, allow one step in; the answer clamps it.

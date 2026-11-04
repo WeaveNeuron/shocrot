@@ -503,3 +503,35 @@ struct TransformTests {
         #expect(windows.map(\.pid) == [6, 7]) // the overlay of background app 5 is skipped, a full-screen app is not
     }
 }
+
+@Suite struct WheelStepperTests {
+    private func run(_ events: [(CGFloat, TimeInterval)], precise: Bool = false, phased: Bool = false) -> [Int] {
+        var stepper = WheelStepper()
+        return events.map { stepper.step(delta: $0.0, precise: precise, phased: phased, at: $0.1) }.filter { $0 != 0 }
+    }
+
+    @Test func eachDeliberateWheelNotchIsOneStep() {
+        #expect(run([(1, 0), (1, 0.4), (1, 0.8)]) == [1, 1, 1])
+        #expect(run([(-1, 0), (-1, 0.4)]) == [-1, -1])
+    }
+
+    @Test func aRemoteSwipeBurstIsOneStep() {
+        // As logged from a remote desktop session: fractions, then large accelerated deltas, ~20 ms apart.
+        let burst: [CGFloat] = [0.1, 0.1, 0.46, 1.74, 3.54, 5.7, 6.3, 10.38, 13.57, 6.86, 5.86, 2.36]
+        #expect(run(burst.enumerated().map { ($0.element, Double($0.offset) * 0.02) }) == [1])
+    }
+
+    @Test func fractionsAloneWaitUntilTheyAddUpToALine() {
+        #expect(run([(0.1, 0), (0.1, 0.05), (0.1, 0.1)]).isEmpty)
+        #expect(run((0..<10).map { (0.1, Double($0) * 0.05) }) == [1])
+    }
+
+    @Test func aPreciseWheelNotchWithoutPhaseIsOneStep() {
+        #expect(run([(10, 0)], precise: true) == [1])
+    }
+
+    @Test func trackpadStepsByDistanceAndNotTooFast() {
+        let swipe = (0..<12).map { (CGFloat(5), Double($0) * 0.05) } // 60 pt over 0.55 s
+        #expect(run(swipe, precise: true, phased: true) == [1, 1, 1, 1])
+    }
+}

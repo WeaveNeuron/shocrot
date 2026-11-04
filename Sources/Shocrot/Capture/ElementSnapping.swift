@@ -84,3 +84,41 @@ final class ElementProbe: @unchecked Sendable {
         return out
     }
 }
+
+/// Turns scroll events into snap-level steps that stay controllable whatever sends them. A trackpad (phased,
+/// precise) steps every `trackpadDistance` points, at most once per `interval`. A mouse wheel or a remote
+/// desktop tool, which may turn one swipe into a burst of small and large wheel deltas, steps once per burst:
+/// events closer together than `burstGap` count as one scroll, so notch by notch is one step each.
+struct WheelStepper {
+    static let interval: TimeInterval = 0.12
+    static let burstGap: TimeInterval = 0.18
+    static let trackpadDistance: CGFloat = 14
+
+    private var accumulated: CGFloat = 0
+    private var lastEvent: TimeInterval = -.infinity
+    private var lastStep: TimeInterval = -.infinity
+    private var steppedThisBurst = false
+
+    /// +1 one level in, -1 one level out, 0 nothing (yet).
+    mutating func step(delta: CGFloat, precise: Bool, phased: Bool, at time: TimeInterval) -> Int {
+        guard delta != 0 else { return 0 }
+        let newBurst = time - lastEvent > Self.burstGap
+        lastEvent = time
+        if newBurst || (accumulated != 0 && (accumulated > 0) != (delta > 0)) {
+            accumulated = 0
+            steppedThisBurst = false
+        }
+        accumulated += delta
+        if phased {
+            guard abs(accumulated) >= Self.trackpadDistance, time - lastStep >= Self.interval else { return 0 }
+        } else {
+            // A line-based wheel reports lines; anything below one is a remote tool's fraction, so wait for more.
+            guard !steppedThisBurst, precise || abs(accumulated) >= 0.999 else { return 0 } // ten 0.1s make a line
+            steppedThisBurst = true
+        }
+        let step = accumulated > 0 ? 1 : -1
+        accumulated = 0
+        lastStep = time
+        return step
+    }
+}
