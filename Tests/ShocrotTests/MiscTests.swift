@@ -430,3 +430,14 @@ struct TransformTests {
         #expect(PermissionGuide.authDialog(in: list, over: settings, ownPID: 1, isRegularApp: { _ in false }) == nil)
     }
 }
+
+@Suite struct StatusIconTests {
+    @Test func plainIconIsATemplateAndTheAttentionIconIsNot() throws {
+        let plain = try #require(StatusIcon.image(attention: false))
+        let flagged = try #require(StatusIcon.image(attention: true))
+        #expect(plain.isTemplate)
+        #expect(!flagged.isTemplate)
+        #expect(flagged.size == plain.size)
+        #expect(flagged.accessibilityDescription?.contains("屏幕录制") == true)
+    }
+}

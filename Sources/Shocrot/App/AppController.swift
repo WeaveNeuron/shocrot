@@ -12,10 +12,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
 
     func start() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        let image = NSImage(systemSymbolName: "text.viewfinder", accessibilityDescription: "Shocrot")
-        image?.isTemplate = true
-        statusItem.button?.image = image
-        statusItem.button?.toolTip = "Shocrot"
+        refreshStatusIcon()
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
@@ -38,6 +35,30 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
             || defaults.bool(forKey: Permission.flowPendingKey) {
             defaults.removeObject(forKey: Permission.flowPendingKey)
             OnboardingWindow.show()
+        }
+    }
+
+    // MARK: - Status icon
+
+    private var statusNeedsAttention: Bool?
+    private var permissionTimer: Timer?
+
+    /// Without Screen Recording nearly nothing works, so the menu bar icon carries a small dot until it is
+    /// granted (and the app relaunched). Polled only while it is missing; the check is cheap.
+    private func refreshStatusIcon() {
+        let attention = Permission.screenRecording.status != .granted
+        if attention != statusNeedsAttention {
+            statusNeedsAttention = attention
+            statusItem.button?.image = StatusIcon.image(attention: attention)
+            statusItem.button?.toolTip = attention ? "Shocrot：需要开启屏幕录制权限" : "Shocrot"
+        }
+        if attention, permissionTimer == nil {
+            permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshStatusIcon() }
+            }
+        } else if !attention {
+            permissionTimer?.invalidate()
+            permissionTimer = nil
         }
     }
 
@@ -71,8 +92,12 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         // Without screen recording nothing but selection translation works, so lead with the fix.
         switch Permission.screenRecording.status {
         case .granted: break
-        case .needsRelaunch: addItem(to: menu, "重新启动以启用屏幕录制", "arrow.clockwise", #selector(relaunch))
-        case .missing: addItem(to: menu, "开启屏幕录制权限…", "exclamationmark.triangle.fill", #selector(showOnboarding))
+        case .needsRelaunch:
+            addAttentionItem(to: menu, "重新启动 Shocrot", subtitle: "屏幕录制已开启，重新启动后生效",
+                             symbol: "arrow.clockwise.circle.fill", color: .controlAccentColor, #selector(relaunch))
+        case .missing:
+            addAttentionItem(to: menu, "开启屏幕录制权限…", subtitle: "截图、识别文字和翻译都需要它",
+                             symbol: "exclamationmark.circle.fill", color: .systemOrange, #selector(showOnboarding))
         }
         if menu.numberOfItems > 0 { menu.addItem(.separator()) }
         for action in HotKeyAction.allCases {
@@ -106,6 +131,17 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         let item = NSMenuItem(title: title, action: selector, keyEquivalent: key)
         item.target = self
         item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        menu.addItem(item)
+    }
+
+    /// A menu item that stands out a little: colored symbol and a one-line explanation.
+    private func addAttentionItem(to menu: NSMenu, _ title: String, subtitle: String, symbol: String,
+                                  color: NSColor, _ selector: Selector) {
+        let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
+        item.target = self
+        item.subtitle = subtitle
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(paletteColors: [.white, color]))
         menu.addItem(item)
     }
 
