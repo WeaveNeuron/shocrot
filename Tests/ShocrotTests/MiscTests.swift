@@ -474,3 +474,32 @@ struct TransformTests {
         #expect(ElementProbe.levels([], window: window) == [window])
     }
 }
+
+@Suite struct WindowCaptureTests {
+    @Test func shadowKeepsTheWindowAtFullSizeOnATransparentCanvas() throws {
+        let c = CGContext(data: nil, width: 200, height: 100, bitsPerComponent: 8, bytesPerRow: 0,
+                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        c.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        c.fill(CGRect(x: 0, y: 0, width: 200, height: 100))
+        let out = try #require(ImageOutput.addingWindowShadow(c.makeImage()!, scale: 2))
+        // blur 48 px, drop 20 px: 60 px each side, 40 above, 80 below
+        #expect(out.width == 200 + 120 && out.height == 100 + 120)
+        let rep = NSBitmapImageRep(cgImage: out)
+        #expect(rep.colorAt(x: 0, y: 0)?.alphaComponent == 0)
+        let center = try #require(rep.colorAt(x: 160, y: 90)?.usingColorSpace(.sRGB))
+        #expect(center.redComponent > 0.99 && center.alphaComponent > 0.99)
+    }
+
+    @Test func fullScreenOverlaysOfBackgroundAppsAreNotSnapTargets() {
+        let screen = CGRect(x: 0, y: 0, width: 1920, height: 1080)
+        func info(_ pid: Int32, _ r: CGRect) -> [String: Any] {
+            [kCGWindowOwnerPID as String: pid, kCGWindowLayer as String: 0, kCGWindowOwnerName as String: "App\(pid)",
+             kCGWindowNumber as String: Int(pid), kCGWindowBounds as String: r.dictionaryRepresentation]
+        }
+        let list = [info(5, screen), info(6, screen), info(7, CGRect(x: 100, y: 100, width: 400, height: 300))]
+        let windows = ScreenCapturer.windows(from: list, primaryHeight: 1080, ownPID: 1, screens: [screen],
+                                             isRegularApp: { $0 != 5 })
+        #expect(windows.map(\.pid) == [6, 7]) // the overlay of background app 5 is skipped, a full-screen app is not
+    }
+}

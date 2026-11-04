@@ -18,6 +18,21 @@ enum ImageOutput {
     }
 
     /// The capture on a soft gradient, with rounded corners and a drop shadow, ready to share.
+    /// A captured window on a transparent canvas with a soft shadow, a little heavier below, like macOS's own.
+    static func addingWindowShadow(_ image: CGImage, scale: CGFloat) -> CGImage? {
+        let blur = 24 * scale, drop = 10 * scale
+        let side = (blur * 1.25).rounded(.up)
+        let top = (blur * 1.25 - drop).rounded(.up), bottom = (blur * 1.25 + drop).rounded(.up)
+        let space = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let ctx = CGContext(data: nil, width: image.width + Int(side * 2), height: image.height + Int(top + bottom),
+                                  bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                      | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        ctx.setShadow(offset: CGSize(width: 0, height: -drop), blur: blur, color: CGColor(gray: 0, alpha: 0.45))
+        ctx.draw(image, in: CGRect(x: side, y: bottom, width: CGFloat(image.width), height: CGFloat(image.height)))
+        return ctx.makeImage()
+    }
+
     static func beautified(_ image: CGImage, scale: CGFloat) -> CGImage? {
         let w = CGFloat(image.width), h = CGFloat(image.height)
         let pad = (min(max(min(w, h) / scale * 0.08, 32), 80) * scale).rounded()

@@ -67,8 +67,9 @@ enum ScreenCapturer {
         return result
     }
 
-    /// One window on its own: what is behind or in front of it is left out, the background stays transparent
-    /// and the window keeps its shadow. Returns the image and its pixels-per-point scale.
+    /// One window on its own: what is behind or in front of it is left out and the background stays transparent.
+    /// Captured 1:1 without the system shadow (which ScreenCaptureKit fits in by shrinking the window), then given
+    /// a shadow of our own. Returns the image and its pixels-per-point scale.
     static func captureWindow(_ id: CGWindowID) async throws -> (CGImage, CGFloat) {
         guard hasPermission else { throw CaptureError.permissionDenied }
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
@@ -79,10 +80,11 @@ enum ScreenCapturer {
         config.width = Int((filter.contentRect.width * scale).rounded())
         config.height = Int((filter.contentRect.height * scale).rounded())
         config.showsCursor = false
-        config.ignoreShadowsSingleWindow = false
+        config.ignoreShadowsSingleWindow = true
         config.shouldBeOpaque = false
         config.captureResolution = .best
-        return (try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config), scale)
+        let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        return (ImageOutput.addingWindowShadow(image, scale: scale) ?? image, scale)
     }
 
     #if DEBUG
@@ -106,13 +108,17 @@ enum ScreenCapturer {
 
     /// On-screen windows, front to back, in AppKit global coordinates. Safe to call off the main thread;
     /// the first call of a session takes ~45 ms, so it runs alongside the screen capture.
-    static func visibleWindows(primaryHeight: CGFloat) -> [WindowInfo] {
+    /// `screens` are the display frames in CG coordinates (top-left origin), read on the main thread.
+    static func visibleWindows(primaryHeight: CGFloat, screens: [CGRect]) -> [WindowInfo] {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
                 as? [[String: Any]] else { return [] }
-        return windows(from: list, primaryHeight: primaryHeight, ownPID: ProcessInfo.processInfo.processIdentifier)
+        return windows(from: list, primaryHeight: primaryHeight, ownPID: ProcessInfo.processInfo.processIdentifier,
+                       screens: screens,
+                       isRegularApp: { NSRunningApplication(processIdentifier: $0)?.activationPolicy == .regular })
     }
 
-    static func windows(from list: [[String: Any]], primaryHeight: CGFloat, ownPID: Int32) -> [WindowInfo] {
+    static func windows(from list: [[String: Any]], primaryHeight: CGFloat, ownPID: Int32, screens: [CGRect] = [],
+                        isRegularApp: (pid_t) -> Bool = { _ in true }) -> [WindowInfo] {
         list.compactMap { info in
             guard let layer = info[kCGWindowLayer as String] as? Int, layer < 1000,
                   let pid = info[kCGWindowOwnerPID as String] as? Int32, pid != ownPID,
@@ -122,6 +128,9 @@ enum ScreenCapturer {
             if let alpha = info[kCGWindowAlpha as String] as? Double, alpha < 0.05 { return nil }
             let owner = info[kCGWindowOwnerName as String] as? String ?? ""
             if owner == "Window Server" || owner == "Dock" && layer != 0 { return nil }
+            // A background utility covering a whole display is an overlay (cursor highlighters, automation
+            // tools); snapping to it would hide every window underneath.
+            if screens.contains(where: { bounds.insetBy(dx: -2, dy: -2).contains($0) }), !isRegularApp(pid) { return nil }
             // CG uses a top-left origin relative to the primary display; flip to AppKit.
             let flipped = CGRect(x: bounds.minX, y: primaryHeight - bounds.maxY, width: bounds.width, height: bounds.height)
             return WindowInfo(frame: flipped, title: info[kCGWindowName as String] as? String ?? owner,
