@@ -363,3 +363,26 @@ struct TransformTests {
         }
     }
 }
+
+@Suite struct MosaicSourceTests {
+    private func image() -> CGImage {
+        let c = CGContext(data: nil, width: 64, height: 32, bitsPerComponent: 8, bytesPerRow: 0,
+                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        c.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        c.fill(CGRect(x: 0, y: 0, width: 20, height: 32))
+        return c.makeImage()!
+    }
+
+    @Test func preparedImageIsReusedAndMatchesTheSource() throws {
+        let source = MosaicSource(source: image(), blockSize: 8)
+        source.prepare()
+        let first = try #require(source.get())
+        #expect(first.width == 64 && first.height == 32)
+        #expect(source.get() === first)
+    }
+
+    @Test func worksWithoutPreparing() {
+        #expect(MosaicSource(source: image(), blockSize: 8).get() != nil)
+    }
+}

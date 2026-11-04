@@ -277,3 +277,36 @@ extension CGImage {
         return CIContext(options: [.useSoftwareRenderer: false]).createCGImage(out, from: ci.extent)
     }
 }
+
+/// The pixelated backdrop for mosaics. Making it takes ~10 ms on a 5K screen (~50 ms the first time in a
+/// session), so it is prepared in the background when the tool is picked rather than on the first stroke.
+final class MosaicSource: @unchecked Sendable {
+    private let source: CGImage
+    private let blockSize: CGFloat
+    private let queue = DispatchQueue(label: "shocrot.mosaic", qos: .userInitiated)
+    private var image: CGImage?
+    private var started = false
+
+    init(source: CGImage, blockSize: CGFloat) {
+        self.source = source
+        self.blockSize = blockSize
+    }
+
+    func prepare() {
+        guard !started else { return }
+        started = true
+        queue.async { self.makeIfNeeded() }
+    }
+
+    /// Waits for a preparation in flight instead of starting a second one.
+    func get() -> CGImage? {
+        started = true
+        return queue.sync { makeIfNeeded() }
+    }
+
+    @discardableResult
+    private func makeIfNeeded() -> CGImage? {
+        if image == nil { image = source.pixelated(blockSize: blockSize) }
+        return image
+    }
+}

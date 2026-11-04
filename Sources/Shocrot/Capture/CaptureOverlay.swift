@@ -182,8 +182,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private var stateObserver: AnyCancellable?
     private var trackingArea: NSTrackingArea?
     private var pendingHistoryShift = CGPoint.zero
-    private lazy var mosaicImage: CGImage? = snapshot.image.pixelated(blockSize: 9 * scale)
-    private lazy var renderer = AnnotationRenderer(mosaicImage: { [weak self] in self?.mosaicImage }, backdropRect: bounds)
+    private lazy var mosaic = MosaicSource(source: snapshot.image, blockSize: 9 * scale)
+    private lazy var renderer = AnnotationRenderer(mosaicImage: { [weak self] in self?.mosaic.get() }, backdropRect: bounds)
 
     init(frame: CGRect, snapshot: ScreenSnapshot, windowRects: [CGRect], mode: CaptureMode, session: CaptureSession) {
         self.snapshot = snapshot
@@ -196,7 +196,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         state.canRedo = false
         state.tool = nil
         stateObserver = state.objectWillChange.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.layoutToolbar(); self?.updateCursor() }
+            DispatchQueue.main.async { self?.layoutToolbar(); self?.updateCursor(); self?.prepareMosaicIfPicked() }
         }
     }
 
@@ -234,6 +234,10 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         toolbarHost?.removeFromSuperview()
         toolbarHost = nil
         needsDisplay = true
+    }
+
+    private func prepareMosaicIfPicked() {
+        if state.tool == .mosaic, toolbarHost != nil { mosaic.prepare() }
     }
 
     private func syncUndoState() {
