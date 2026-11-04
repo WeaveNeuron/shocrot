@@ -113,6 +113,10 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                 item.keyEquivalent = hk.keyEquivalent
                 item.keyEquivalentModifierMask = hk.modifierFlags
             }
+            // Accessibility is optional, so no dot on the icon; the one item that needs it says so.
+            if action == .translateSelection, Permission.accessibility.status == .missing {
+                item.subtitle = "需要开启“辅助功能”权限"
+            }
             menu.addItem(item)
         }
         menu.addItem(.separator())

@@ -17,7 +17,7 @@ enum Permission: String, CaseIterable, Identifiable {
     var detail: String {
         switch self {
         case .screenRecording: "截图、识别文字与截图翻译"
-        case .accessibility: "划词翻译读取选中的文字（可选）"
+        case .accessibility: "划词翻译与截图时选择控件（可选）"
         }
     }
 
