@@ -139,6 +139,7 @@ private struct SettingsIcon: View {
 
 private struct GeneralSettings: View {
     @ObservedObject private var s = Settings.shared
+    @State private var offerToClearHistory = false
 
     var body: some View {
         Form {
@@ -170,6 +171,15 @@ private struct GeneralSettings: View {
             }
         }
         .formStyle(.grouped)
+        .onChange(of: s.keepHistory) { _, keep in
+            if !keep, !HistoryStore.shared.items.isEmpty { offerToClearHistory = true }
+        }
+        .confirmationDialog("要删除已有的历史记录吗？", isPresented: $offerToClearHistory) {
+            Button("删除 \(HistoryStore.shared.items.count) 项", role: .destructive) { HistoryStore.shared.clear() }
+            Button("保留", role: .cancel) {}
+        } message: {
+            Text("之后不再保留新截图。已有的截图和识别文字仍在本机，已保存到文件夹的截图不受影响。")
+        }
     }
 
     private func chooseFolder() {
@@ -192,7 +202,7 @@ private struct ShortcutSettings: View {
             Section {
                 ForEach(HotKeyAction.allCases) { action in
                     LabeledContent {
-                        HotKeyRecorder(hotKey: Binding(get: { s.hotKeys[action] }, set: { s.hotKeys[action] = $0 }))
+                        HotKeyRecorder(action: action, hotKey: Binding(get: { s.hotKeys[action] }, set: { s.hotKeys[action] = $0 }))
                     } label: {
                         HStack {
                             Label {
@@ -202,7 +212,7 @@ private struct ShortcutSettings: View {
                             }
                             if app.failedHotKeys.contains(action) {
                                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                                    .help("此快捷键已被其他应用占用")
+                                    .help("此快捷键已被系统或其他应用占用")
                             }
                         }
                     }
@@ -216,6 +226,7 @@ private struct ShortcutSettings: View {
                 shortcutRow("保存 / 另存为", "⌘S  ⇧⌘S")
                 shortcutRow("识别文字 / 翻译 / 贴图", "⌘T  ⌘D  ⌘P")
                 shortcutRow("滚动截图 / 录屏", "⌘L  ⌘R")
+                shortcutRow("录屏中停止并保存", "⌃⌘⎋")
                 shortcutRow("标注工具", Tool.allCases.map { String($0.shortcut).uppercased() }.joined(separator: " "))
                 shortcutRow("撤销 / 重做", "⌘Z  ⇧⌘Z")
                 shortcutRow("微调选区", "方向键（⇧ 10 倍）")
@@ -237,6 +248,7 @@ private struct ShortcutSettings: View {
 }
 
 struct HotKeyRecorder: View {
+    let action: HotKeyAction
     @Binding var hotKey: HotKey?
     @State private var recording = false
     @State private var monitor: Any?
@@ -262,7 +274,14 @@ struct HotKeyRecorder: View {
             case 53: stop() // Esc
             case 51, 117: hotKey = nil; stop() // Delete
             default:
-                if let hk = HotKey(event: event) { hotKey = hk; stop() } else { NSSound.beep() }
+                guard let hk = HotKey(event: event) else { NSSound.beep(); break }
+                if let other = HotKeyAction.allCases.first(where: { $0 != action && Settings.shared.hotKeys[$0] == hk }) {
+                    NSSound.beep()
+                    Feedback.toast("\(hk.displayString) 已用于“\(other.title)”", symbol: "exclamationmark.triangle.fill")
+                    break
+                }
+                hotKey = hk
+                stop()
             }
             return nil
         }
@@ -327,7 +346,9 @@ private struct AboutView: View {
 
 private struct TranslateSettings: View {
     @ObservedObject private var s = Settings.shared
-    @State private var apiKey = Keychain.llmAPIKey ?? ""
+    @State private var apiKey = Keychain.llmAPIKey(for: Settings.shared.llm.baseURL) ?? ""
+    /// Only after choosing a preset or turning this on may a listed model replace the configured one.
+    @State private var adoptListedModel = false
     @State private var testStatus: String?
     @State private var models: [String] = []
 
@@ -370,13 +391,18 @@ private struct TranslateSettings: View {
                             s.llm.model = p.model
                             s.llm.name = p.name
                             s.llm.disableThinking = p.disableThinking
+                            adoptListedModel = true
                         })) {
                         ForEach(LLMConfig.presets) { Text($0.name).tag($0.id) }
                         Text("自定义").tag("")
                     }
                     TextField("接口地址", text: $s.llm.baseURL, prompt: Text("https://…/v1"))
                     SecureField("API Key", text: $apiKey, prompt: Text("本地模型可留空"))
-                        .onChange(of: apiKey) { _, key in Keychain.llmAPIKey = key }
+                        .onChange(of: apiKey) { _, key in
+                            if !Keychain.setLLMAPIKey(key, for: s.llm.baseURL) {
+                                Feedback.toast("API Key 未能保存，请检查接口地址和钥匙串权限", symbol: "exclamationmark.triangle.fill")
+                            }
+                        }
                     LabeledContent("模型") {
                         HStack(spacing: 6) {
                             TextField("模型", text: $s.llm.model).labelsHidden()
@@ -409,19 +435,24 @@ private struct TranslateSettings: View {
             }
         }
         .formStyle(.grouped)
+        .onChange(of: s.llm.baseURL) { _, url in apiKey = Keychain.llmAPIKey(for: url) ?? "" }
+        .onChange(of: s.llm.enabled) { _, on in if on { adoptListedModel = true } }
     }
 
-    /// Lists the endpoint's models; if the configured one isn't there (e.g. a preset default), picks the first.
+    /// Lists the endpoint's models; a just-chosen preset's default model gives way to an installed one.
     private func loadModels() async {
         try? await Task.sleep(for: .milliseconds(400)) // debounce typing in the URL / key fields
         guard !Task.isCancelled else { return }
-        models = (try? await LLMTranslationService.models(config: s.llm, apiKey: apiKey)) ?? []
-        if let first = models.first, !models.contains(s.llm.model) { s.llm.model = first }
+        let listed = (try? await LLMTranslationService.models(config: s.llm, apiKey: Keychain.llmAPIKey(for: s.llm.baseURL))) ?? []
+        guard !Task.isCancelled else { return }
+        models = listed
+        if adoptListedModel, let first = listed.first, !listed.contains(s.llm.model) { s.llm.model = first }
+        adoptListedModel = false
     }
 
     private func test() {
         testStatus = "正在测试…"
-        let service = LLMTranslationService(config: s.llm, apiKey: apiKey)
+        let service = LLMTranslationService(config: s.llm, apiKey: Keychain.llmAPIKey(for: s.llm.baseURL))
         Task { @MainActor in
             do {
                 var output = ""

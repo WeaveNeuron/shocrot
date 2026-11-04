@@ -87,6 +87,7 @@ final class PreviewModel: ObservableObject {
     @Published var isExporting = false
     var videoURL: URL?
     var onClose: () -> Void = {}
+    @Published private(set) var isSaving = false
     private var tempURL: URL?
 
     init(image: CGImage, scale: CGFloat, status: String, savedURL: URL?) {
@@ -96,6 +97,21 @@ final class PreviewModel: ObservableObject {
         self.status = status
         self.savedURL = savedURL
         thumbnail = ImageOutput.nsImage(image, scale: scale)
+    }
+
+    /// The result counts only if the preview still shows the version that was saved.
+    @MainActor
+    func save() async {
+        guard !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
+        let saving = image
+        do {
+            let url = try await ImageOutput.saveInBackground(saving, scale: scale)
+            guard image === saving else { return }
+            savedURL = url
+            status = "已保存"
+        } catch { Feedback.error(error) }
     }
 
     /// Switches between the plain capture and the one on a gradient, and copies the result.
@@ -138,7 +154,7 @@ final class PreviewModel: ObservableObject {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Shocrot", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent(ImageOutput.timestampName).appendingPathExtension("png")
-        guard let data = ImageOutput.data(image, format: .png), (try? data.write(to: url)) != nil else { return nil }
+        guard let data = ImageOutput.data(image, format: .png, scale: scale), (try? data.write(to: url)) != nil else { return nil }
         tempURL = url
         return url
     }
@@ -225,11 +241,9 @@ private struct PreviewCard: View {
                         }
                     } else {
                         PreviewButton(symbol: "square.and.arrow.down", help: "保存") {
-                            do {
-                                model.savedURL = try ImageOutput.save(model.image)
-                                model.status = "已保存"
-                            } catch { Feedback.error(error) }
+                            Task { await model.save() }
                         }
+                        .disabled(model.isSaving)
                     }
                     PreviewButton(symbol: "pin", help: "贴到屏幕") {
                         PinWindow.pin(model.image, scale: model.scale)

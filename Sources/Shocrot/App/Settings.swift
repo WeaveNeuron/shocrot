@@ -20,8 +20,8 @@ struct HotKey: Codable, Equatable {
         if flags.contains(.control) { mods |= UInt32(controlKey) }
         if flags.contains(.shift) { mods |= UInt32(shiftKey) }
         let isFunctionKey = HotKey.functionKeyNames[UInt32(event.keyCode)] != nil
-        // Require at least one modifier unless it is a function key (F1...F12).
-        guard mods != 0 || isFunctionKey else { return nil }
+        // Function keys work alone; anything else needs more than ⇧, or it would swallow capital letters everywhere.
+        guard mods & ~UInt32(shiftKey) != 0 || isFunctionKey else { return nil }
         self.keyCode = UInt32(event.keyCode)
         self.modifiers = mods
     }
@@ -183,9 +183,17 @@ final class Settings: ObservableObject {
         didSet {
             do {
                 if launchAtLogin { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+                if launchAtLogin, SMAppService.mainApp.status == .requiresApproval {
+                    Feedback.toast("请在系统设置的“登录项”中允许 Shocrot", symbol: "exclamationmark.triangle.fill")
+                    SMAppService.openSystemSettingsLoginItems()
+                }
             } catch {
                 NSLog("Shocrot: launch at login failed: \(error)")
+                Feedback.toast("无法更改登录时启动：\(error.localizedDescription)", symbol: "exclamationmark.triangle.fill")
             }
+            // Show what the system actually did, not what was asked for.
+            let actual = SMAppService.mainApp.status == .enabled
+            if actual != launchAtLogin { launchAtLogin = actual }
         }
     }
 

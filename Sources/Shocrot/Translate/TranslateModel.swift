@@ -45,8 +45,11 @@ final class TranslateModel: ObservableObject {
             Task { [weak self] in
                 do {
                     for try await partial in service.translate(text, from: from, to: to) {
+                        guard !Task.isCancelled else { return }
                         self?.update(index) { $0.text = partial }
                     }
+                    // A cancelled stream ends normally; `results` already belongs to the newer query.
+                    guard !Task.isCancelled else { return }
                     self?.update(index) { $0.isLoading = false }
                 } catch {
                     guard !Task.isCancelled else { return }

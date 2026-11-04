@@ -202,7 +202,7 @@ final class PinWindow: NSPanel {
         Feedback.toast("已复制图片")
     }
 
-    @objc private func saveImage() { ImageOutput.saveAs(image) }
+    @objc private func saveImage() { ImageOutput.saveAs(image, scale: scale) }
     @objc private func recognizeText() { AppController.shared.recognize(image: image, scale: scale) }
     @objc private func resetZoom() { setZoom(1, anchor: nil) }
     @objc private func setOpacity(_ sender: NSMenuItem) { alphaValue = CGFloat(sender.tag) / 100 }

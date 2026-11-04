@@ -12,7 +12,7 @@ enum CaptureOutcome {
 /// The product of a finished selection.
 struct CaptureResult {
     let image: CGImage      // with annotations
-    let rawImage: CGImage   // without annotations (for OCR)
+    let ocrImage: CGImage   // for OCR: no drawings on top of the text, but mosaics stay redacted
     let globalRect: CGRect  // AppKit global coordinates, in points
     let scale: CGFloat
 }
@@ -150,9 +150,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         case movingAnnotation(index: Int, anchor: CGPoint, original: Annotation, moved: Bool)
     }
 
-    private enum Handle: CaseIterable {
-        case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
-    }
+    private typealias Handle = SelectionHandle
 
     private let snapshot: ScreenSnapshot
     private let windowRects: [CGRect]
@@ -166,15 +164,14 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private var hoverRect: CGRect?
     var mouseLocation: CGPoint?
     private var annotations: [Annotation] = []
-    // Snapshot-based history so moves and deletions are undoable too.
-    private var undoStack: [[Annotation]] = [] { didSet { syncUndoState() } }
-    private var redoStack: [[Annotation]] = [] { didSet { syncUndoState() } }
+    private var history = AnnotationHistory() { didSet { syncUndoState() } }
     private var selectedAnnotation: Int? { didSet { if oldValue != selectedAnnotation { needsDisplay = true } } }
     private var current: Annotation?
     private var textField: NSTextField?
     private var toolbarHost: NSHostingView<CaptureToolbar>?
     private var stateObserver: AnyCancellable?
     private var trackingArea: NSTrackingArea?
+    private var pendingHistoryShift = CGPoint.zero
     private lazy var mosaicImage: CGImage? = snapshot.image.pixelated(blockSize: 9 * scale)
     private lazy var renderer = AnnotationRenderer(mosaicImage: { [weak self] in self?.mosaicImage }, backdropRect: bounds)
 
@@ -220,8 +217,8 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         hoverRect = nil
         mouseLocation = nil
         annotations.removeAll()
-        undoStack.removeAll()
-        redoStack.removeAll()
+        history.removeAll()
+        pendingHistoryShift = .zero
         selectedAnnotation = nil
         phase = .idle
         toolbarHost?.removeFromSuperview()
@@ -231,13 +228,13 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     private func syncUndoState() {
         guard selection != nil else { return }
-        state.canUndo = !undoStack.isEmpty
-        state.canRedo = !redoStack.isEmpty
+        state.canUndo = history.canUndo
+        state.canRedo = history.canRedo
     }
 
     private func pushUndo() {
-        undoStack.append(annotations)
-        redoStack.removeAll()
+        applyPendingHistoryShift()
+        history.record(annotations)
     }
 
     // MARK: - Drawing
@@ -610,25 +607,11 @@ final class OverlayView: NSView, NSTextFieldDelegate {
                 hoverRect = nil
             }
         case let .moving(anchor, original):
-            var r = original.offsetBy(dx: p.x - anchor.x, dy: p.y - anchor.y)
-            r.origin.x = min(max(r.minX, 0), bounds.width - r.width)
-            r.origin.y = min(max(r.minY, 0), bounds.height - r.height)
+            let r = SelectionGeometry.clamped(original.offsetBy(dx: p.x - anchor.x, dy: p.y - anchor.y), in: bounds)
             shiftAnnotations(by: CGPoint(x: r.minX - (selection?.minX ?? r.minX), y: r.minY - (selection?.minY ?? r.minY)))
             selection = r.integral
         case let .resizing(h, o):
-            var minX = o.minX, maxX = o.maxX, minY = o.minY, maxY = o.maxY
-            switch h {
-            case .topLeft: minX = p.x; maxY = p.y
-            case .top: maxY = p.y
-            case .topRight: maxX = p.x; maxY = p.y
-            case .right: maxX = p.x
-            case .bottomRight: maxX = p.x; minY = p.y
-            case .bottom: minY = p.y
-            case .bottomLeft: minX = p.x; minY = p.y
-            case .left: minX = p.x
-            }
-            let r = rect(CGPoint(x: minX, y: minY), CGPoint(x: maxX, y: maxY)).integral
-            if r.width >= 2, r.height >= 2 { selection = r }
+            if let r = SelectionGeometry.resized(o, handle: h, to: p, in: bounds) { selection = r }
         case .drawing:
             updateAnnotation(to: p, constrained: event.modifierFlags.contains(.shift))
         case let .movingAnnotation(i, anchor, original, moved):
@@ -653,6 +636,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             if let s = selection, s.width < 4 || s.height < 4 { selection = nil; break }
             if selection != nil { selectionCompleted() }
         case .moving, .resizing:
+            applyPendingHistoryShift()
             phase = .idle
             showToolbar()
         case .drawing:
@@ -700,11 +684,16 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     private func shiftAnnotations(by d: CGPoint) {
         guard d != .zero else { return }
-        annotations = annotations.map { a in
-            var a = a
-            a.points = a.points.map { CGPoint(x: $0.x + d.x, y: $0.y + d.y) }
-            return a
-        }
+        annotations = annotations.map { $0.shifted(by: d) }
+        pendingHistoryShift.x += d.x
+        pendingHistoryShift.y += d.y
+    }
+
+    /// Rewriting all of history on every drag event is wasteful, so it catches up when the result is needed.
+    private func applyPendingHistoryShift() {
+        guard pendingHistoryShift != .zero else { return }
+        history.shift(by: pendingHistoryShift)
+        pendingHistoryShift = .zero
     }
 
     // MARK: - Annotations
@@ -858,14 +847,15 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     private func nudge(keyCode: UInt16, by step: CGFloat) {
         guard var r = selection, annotations.isEmpty else { return }
+        let before = r.origin
         switch keyCode {
         case 123: r.origin.x -= step
         case 124: r.origin.x += step
         case 125: r.origin.y -= step
         default: r.origin.y += step
         }
-        r.origin.x = min(max(r.minX, 0), bounds.width - r.width)
-        r.origin.y = min(max(r.minY, 0), bounds.height - r.height)
+        r = SelectionGeometry.clamped(r, in: bounds)
+        history.shift(by: CGPoint(x: r.minX - before.x, y: r.minY - before.y)) // undone annotations travel too
         selection = r
         layoutToolbar()
         needsDisplay = true
@@ -880,16 +870,16 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     }
 
     private func undo() {
-        guard let previous = undoStack.popLast() else { return }
-        redoStack.append(annotations)
+        applyPendingHistoryShift()
+        guard let previous = history.undo(from: annotations) else { return }
         annotations = previous
         selectedAnnotation = nil
         needsDisplay = true
     }
 
     private func redo() {
-        guard let next = redoStack.popLast() else { return }
-        undoStack.append(annotations)
+        applyPendingHistoryShift()
+        guard let next = history.redo(from: annotations) else { return }
         annotations = next
         selectedAnnotation = nil
         needsDisplay = true
@@ -1030,20 +1020,27 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         guard let sel = selection?.intersection(bounds), sel.width >= 1, sel.height >= 1 else { return nil }
         let pixelRect = CGRect(x: sel.minX * scale, y: (bounds.height - sel.maxY) * scale,
                                width: sel.width * scale, height: sel.height * scale).integral
-        guard let raw = snapshot.image.cropping(to: pixelRect) else { return nil }
-        var image = raw
-        if !annotations.isEmpty,
-           let ctx = CGContext(data: nil, width: raw.width, height: raw.height, bitsPerComponent: 8, bytesPerRow: 0,
-                               space: snapshot.image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!,
-                               bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) {
-            ctx.scaleBy(x: CGFloat(raw.width) / sel.width, y: CGFloat(raw.height) / sel.height)
-            ctx.translateBy(x: -sel.minX, y: -sel.minY)
-            ctx.interpolationQuality = .none
-            ctx.draw(snapshot.image, in: bounds)
-            annotations.forEach { renderer.draw($0, in: ctx) }
-            image = ctx.makeImage() ?? raw
-        }
+        guard let cropped = snapshot.image.cropping(to: pixelRect) else { return nil }
+        let raw = cropped.width == snapshot.image.width && cropped.height == snapshot.image.height
+            ? cropped : cropped.detachedCopy()
+        // Failing is safer than handing over an image without the user's redactions.
+        guard let image = annotations.isEmpty ? raw : render(annotations, over: raw, selection: sel) else { return nil }
+        let mosaics = annotations.filter { $0.tool == .mosaic }
+        guard let ocrImage = mosaics.isEmpty ? raw : render(mosaics, over: raw, selection: sel) else { return nil }
         let global = sel.offsetBy(dx: snapshot.screen.frame.minX, dy: snapshot.screen.frame.minY)
-        return CaptureResult(image: image, rawImage: raw, globalRect: global, scale: scale)
+        return CaptureResult(image: image, ocrImage: ocrImage, globalRect: global, scale: scale)
+    }
+
+    private func render(_ list: [Annotation], over raw: CGImage, selection sel: CGRect) -> CGImage? {
+        guard let ctx = CGContext(data: nil, width: raw.width, height: raw.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: snapshot.image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                      | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        ctx.scaleBy(x: CGFloat(raw.width) / sel.width, y: CGFloat(raw.height) / sel.height)
+        ctx.translateBy(x: -sel.minX, y: -sel.minY)
+        ctx.interpolationQuality = .none
+        ctx.draw(snapshot.image, in: bounds)
+        list.forEach { renderer.draw($0, in: ctx) }
+        return ctx.makeImage()
     }
 }

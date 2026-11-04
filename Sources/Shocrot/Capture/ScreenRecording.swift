@@ -6,7 +6,8 @@ import ScreenCaptureKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Records a screen region to an MP4 in the save folder. ↩ or 停止 finishes, Esc or 取消 discards.
+/// Records a screen region to an MP4 in the save folder. 停止 or ⌃⌘⎋ finishes, 取消 discards.
+/// Plain ↩ and Esc stay with the recorded app: they are part of what people demonstrate.
 @MainActor
 final class ScreenRecording: NSObject {
     private static var current: ScreenRecording?
@@ -18,15 +19,27 @@ final class ScreenRecording: NSObject {
     private let tempURL = FileManager.default.temporaryDirectory
         .appendingPathComponent("Shocrot-\(UUID().uuidString).mp4")
     private var stream: SCStream?
-    private var finished: CheckedContinuation<Error?, Never>?
+    /// How the recording output ended; nil while it is still writing.
+    private var outputResult: Result<Void, Error>?
+    private var outputWaiter: CheckedContinuation<Void, Never>?
     private var border: NSPanel?
     private var hud: NSPanel?
-    private var keyTap: KeyInterceptor?
     private var clock: Timer?
     private var startedAt: Date?
     private var stopping = false
+    /// The system ended the stream before `startCapture()` returned.
+    private var endedWhileStarting = false
+    /// Saving what a stopped recording produced; outlives the session's `current` slot.
+    private static var finishing: Task<Void, Never>?
 
     static var isActive: Bool { current != nil }
+    static var needsFinishing: Bool { current != nil || finishing != nil }
+
+    /// Stops a running recording and waits until it and any earlier one are saved.
+    static func finishBeforeQuit() async {
+        current?.stop()
+        await finishing?.value
+    }
 
     static func start(rect: CGRect, on screen: NSScreen, completion: @escaping (URL, TimeInterval) -> Void) {
         guard current == nil else { return }
@@ -44,8 +57,13 @@ final class ScreenRecording: NSObject {
     private func begin() {
         border = Self.makeBorder(around: rect)
         showHUD()
-        keyTap = KeyInterceptor(keyCodes: [kVK_Return, kVK_ANSI_KeypadEnter, kVK_Escape]) { [weak self] code in
-            if code == kVK_Escape { self?.cancel() } else { self?.stop() }
+        // Same combination as the system's own screen recording; needs no permission.
+        let registered = HotKeyCenter.shared.setTransient(HotKey(keyCode: UInt32(kVK_Escape), modifiers: UInt32(cmdKey | controlKey))) { [weak self] in
+            MainActor.assumeIsolated { self?.stop() }
+        }
+        if !registered {
+            model.stopShortcutAvailable = false
+            Feedback.toast("⌃⌘⎋ 已被占用，请点“停止”结束录屏", symbol: "exclamationmark.triangle.fill")
         }
         Task { await record() }
     }
@@ -76,12 +94,18 @@ final class ScreenRecording: NSObject {
             output.outputURL = tempURL
             output.outputFileType = .mp4
             output.videoCodecType = .h264
-            let stream = SCStream(filter: filter, configuration: config, delegate: nil)
+            let stream = SCStream(filter: filter, configuration: config, delegate: self)
             try stream.addRecordingOutput(SCRecordingOutput(configuration: output, delegate: self))
             guard Self.current === self, !stopping else { return }
             try await stream.startCapture()
+            // Cancelled while starting: nobody else knows about this stream yet.
+            guard Self.current === self, !stopping else { await discard(stream); return }
             self.stream = stream
             startedAt = Date()
+            if endedWhileStarting || outputResult != nil {
+                saveAndClose(interrupted: true)
+                return
+            }
             model.isRecording = true
             clock = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated {
@@ -90,32 +114,63 @@ final class ScreenRecording: NSObject {
                 }
             }
         } catch {
+            guard !stopping else { return } // cancelled while starting; the failure doesn't matter
             close()
+            removeTempFile()
             Feedback.error(error)
         }
     }
 
     func stop() {
         guard Self.current === self, !stopping else { return }
-        guard let stream, let startedAt else { cancel(); return }
+        guard stream != nil else { cancel(); return }
+        saveAndClose()
+    }
+
+    /// Stops the stream and saves whatever was recorded, also when the system ended it early.
+    private func saveAndClose(interrupted: Bool = false) {
+        guard let stream, let startedAt, !stopping else { return }
         stopping = true
         let duration = Date().timeIntervalSince(startedAt)
         close()
-        Task {
-            let error = await withCheckedContinuation { cont in
-                finished = cont
-                Task { try? await stream.stopCapture() }
-            }
-            if let error {
-                Feedback.error(error)
-                return
-            }
+        Self.finishing = Task {
+            defer { Self.finishing = nil }
+            var stopError: Error?
+            do { try await stream.stopCapture() } catch { stopError = error }
+            await waitForOutput()
             do {
-                completion(try moveIntoSaveFolder(), duration)
+                switch outputResult {
+                case .success:
+                    let url = try moveIntoSaveFolder()
+                    if interrupted { Feedback.toast("录屏被系统中断，已保存此前的内容", symbol: "exclamationmark.triangle.fill") }
+                    completion(url, duration)
+                case let .failure(error):
+                    throw error
+                case nil:
+                    throw stopError ?? CocoaError(.fileWriteUnknown)
+                }
             } catch {
-                Feedback.error(error)
+                keepFailedRecording(error)
             }
         }
+    }
+
+    /// Only 取消 discards. A file that couldn't be delivered may be all the user has of this recording.
+    private func keepFailedRecording(_ error: Error) {
+        let size = (try? tempURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        guard size > 0 else {
+            removeTempFile()
+            Feedback.error(error)
+            return
+        }
+        // The temporary folder gets purged, so prefer somewhere lasting.
+        var kept = tempURL
+        if let movies = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first {
+            let url = ImageOutput.uniqueURL(in: movies, ext: "mp4")
+            if (try? FileManager.default.moveItem(at: tempURL, to: url)) != nil { kept = url }
+        }
+        Feedback.toast("录屏未能正常保存，文件已保留：\(kept.lastPathComponent)", symbol: "exclamationmark.triangle.fill")
+        NSWorkspace.shared.activateFileViewerSelecting([kept])
     }
 
     func cancel() {
@@ -123,16 +178,61 @@ final class ScreenRecording: NSObject {
         stopping = true
         let stream = stream
         close()
-        Task {
-            try? await stream?.stopCapture()
-            try? FileManager.default.removeItem(at: tempURL)
+        guard let stream else { return } // not started; record() cleans up if it is about to
+        Task { await discard(stream) }
+    }
+
+    private func discard(_ stream: SCStream) async {
+        try? await stream.stopCapture()
+        await waitForOutput()
+        removeTempFile()
+    }
+
+    /// Returns once the output has ended, or after 5 seconds if it never reports back.
+    private func waitForOutput() async {
+        guard outputResult == nil else { return }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            outputWaiter = cont
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(5))
+                self?.resumeOutputWaiter()
+            }
         }
+    }
+
+    private func resumeOutputWaiter() {
+        outputWaiter?.resume()
+        outputWaiter = nil
+    }
+
+    private func outputEnded(_ result: Result<Void, Error>) {
+        guard outputResult == nil else { return }
+        outputResult = result
+        resumeOutputWaiter()
+        guard !stopping, Self.current === self else { return }
+        // Ended on its own, without the user stopping it.
+        switch result {
+        case .success:
+            saveAndClose(interrupted: true)
+        case let .failure(error):
+            stopping = true
+            let stream = stream
+            close()
+            Self.finishing = Task {
+                defer { Self.finishing = nil }
+                try? await stream?.stopCapture()
+                keepFailedRecording(error)
+            }
+        }
+    }
+
+    private func removeTempFile() {
+        try? FileManager.default.removeItem(at: tempURL)
     }
 
     private func close() {
         clock?.invalidate()
-        keyTap?.stop()
-        keyTap = nil
+        HotKeyCenter.shared.setTransient(nil)
         border?.orderOut(nil)
         hud?.orderOut(nil)
         border = nil
@@ -197,20 +297,21 @@ final class ScreenRecording: NSObject {
     }
 }
 
-extension ScreenRecording: SCRecordingOutputDelegate {
+extension ScreenRecording: SCRecordingOutputDelegate, SCStreamDelegate {
     nonisolated func recordingOutputDidFinishRecording(_ recordingOutput: SCRecordingOutput) {
-        Task { @MainActor in self.finished?.resume(returning: nil); self.finished = nil }
+        Task { @MainActor in self.outputEnded(.success(())) }
     }
 
     nonisolated func recordingOutput(_ recordingOutput: SCRecordingOutput, didFailWithError error: Error) {
+        Task { @MainActor in self.outputEnded(.failure(error)) }
+    }
+
+    /// The display went to sleep, was unplugged, or the permission was revoked.
+    nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
         Task { @MainActor in
-            if let finished = self.finished {
-                finished.resume(returning: error)
-                self.finished = nil
-            } else if !self.stopping {
-                self.close()
-                Feedback.error(error)
-            }
+            guard Self.current === self, !self.stopping else { return }
+            guard self.stream != nil else { self.endedWhileStarting = true; return }
+            self.saveAndClose(interrupted: true)
         }
     }
 }
@@ -219,6 +320,7 @@ extension ScreenRecording: SCRecordingOutputDelegate {
 final class RecordingModel: ObservableObject {
     @Published var isRecording = false
     @Published var elapsed: TimeInterval = 0
+    @Published var stopShortcutAvailable = true
 }
 
 private struct RecordingHUD: View {
@@ -240,7 +342,7 @@ private struct RecordingHUD: View {
                 .frame(width: 70, alignment: .leading)
             Button("取消", action: onCancel)
                 .buttonStyle(.glass)
-                .help("取消 (Esc)")
+                .help("取消并丢弃录屏")
             Button(action: onStop) {
                 HStack(spacing: 5) {
                     Image(systemName: "stop.fill").font(.system(size: 9, weight: .bold))
@@ -249,7 +351,7 @@ private struct RecordingHUD: View {
                 .fixedSize()
             }
             .buttonStyle(HUDProminentButtonStyle(color: .red))
-            .help("停止并保存 (↩)")
+            .help(model.stopShortcutAvailable ? "停止并保存 (⌃⌘⎋)" : "停止并保存")
             .disabled(!model.isRecording)
         }
         .controlSize(.regular)

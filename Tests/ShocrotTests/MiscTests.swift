@@ -1,3 +1,4 @@
+import AppKit
 import Carbon.HIToolbox
 import Testing
 @testable import Shocrot
@@ -124,5 +125,214 @@ struct TransformTests {
         a.pixelScale = 2
         #expect(a.measurement == "100 px")
         #expect(Tool.allCases.filter { $0.shortcut == "u" } == [.ruler])
+    }
+}
+
+@Suite struct AnnotationHistoryTests {
+    private func arrow(_ x: CGFloat) -> Annotation {
+        Annotation(tool: .arrow, points: [CGPoint(x: x, y: 0), CGPoint(x: x + 10, y: 0)], color: .red, width: 2)
+    }
+
+    @Test func undoAfterMovingTheSelectionKeepsAnnotationsInPlace() {
+        var history = AnnotationHistory()
+        let first = [arrow(0)]
+        history.record(first)
+        history.shift(by: CGPoint(x: 100, y: 50))
+        let restored = history.undo(from: [arrow(100), arrow(200)])
+        #expect(restored?.first?.points.first == CGPoint(x: 100, y: 50))
+        #expect(history.canRedo)
+    }
+
+    @Test func recordingClearsRedo() {
+        var history = AnnotationHistory()
+        history.record([])
+        _ = history.undo(from: [arrow(0)])
+        #expect(history.canRedo)
+        history.record([])
+        #expect(!history.canRedo)
+    }
+}
+
+@Suite struct SelectionGeometryTests {
+    let bounds = CGRect(x: 0, y: 0, width: 100, height: 100)
+
+    @Test func clampingKeepsTheSize() {
+        let r = SelectionGeometry.clamped(CGRect(x: 90, y: -5, width: 20, height: 20), in: bounds)
+        #expect(r == CGRect(x: 80, y: 0, width: 20, height: 20))
+    }
+
+    @Test func resizingPastTheOppositeEdgeFlips() {
+        let o = CGRect(x: 20, y: 20, width: 20, height: 20)
+        #expect(SelectionGeometry.resized(o, handle: .left, to: CGPoint(x: 50, y: 30), in: bounds)
+            == CGRect(x: 40, y: 20, width: 10, height: 20))
+    }
+
+    @Test func tooSmallAResizeIsRefused() {
+        let o = CGRect(x: 20, y: 20, width: 20, height: 20)
+        #expect(SelectionGeometry.resized(o, handle: .right, to: CGPoint(x: 20.5, y: 30), in: bounds) == nil)
+    }
+}
+
+@Suite struct OutputTests {
+    private func image(_ w: Int = 40, _ h: Int = 20) -> CGImage {
+        let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                          bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
+        c.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        c.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        return c.makeImage()!
+    }
+
+    private func dpi(_ data: Data?) -> CGFloat? {
+        guard let data, let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] else { return nil }
+        return props[kCGImagePropertyDPIWidth] as? CGFloat
+    }
+
+    @Test func retinaFilesCarryTheirDPI() {
+        #expect(dpi(ImageOutput.data(image(), format: .png, scale: 2)) == 144)
+        #expect(dpi(ImageOutput.data(image(), format: .jpeg, scale: 2)) == 144)
+    }
+
+    @Test func clipboardEncodesOnDemand() {
+        let pb = NSPasteboard(name: NSPasteboard.Name("shocrot-test-\(UUID().uuidString)"))
+        defer { pb.releaseGlobally() }
+        var encoded: [NSPasteboard.PasteboardType] = []
+        ImageOutput.onClipboardEncode = { encoded.append($0) }
+        defer { ImageOutput.onClipboardEncode = { _ in } }
+        ImageOutput.copy(image(), scale: 2, to: pb)
+        #expect(pb.availableType(from: [.png]) == .png)
+        #expect(encoded.isEmpty)
+        #expect(dpi(pb.data(forType: .png)) == 144)
+        #expect(encoded == [.png])
+        #expect(pb.data(forType: .tiff) != nil)
+        #expect(encoded == [.png, .tiff])
+    }
+
+    @Test func concurrentSavesNeverShareAFile() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("shocrot-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let picture = image()
+        let urls = try await withThrowingTaskGroup(of: URL.self) { group in
+            for _ in 0..<8 { group.addTask { try await ImageOutput.save(picture, scale: 2, format: .png, in: dir) } }
+            return try await group.reduce(into: [URL]()) { $0.append($1) }
+        }
+        #expect(Set(urls).count == 8)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).count == 8)
+    }
+
+    @Test func mosaicHidesTheAreaEvenWithoutAPixelatedImage() {
+        let ctx = CGContext(data: nil, width: 20, height: 20, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
+        ctx.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: 20, height: 20))
+        let mosaic = Annotation(tool: .mosaic, points: [.zero, CGPoint(x: 20, y: 20)], color: .red, width: 2)
+        AnnotationRenderer(mosaicImage: { nil }, backdropRect: CGRect(x: 0, y: 0, width: 20, height: 20)).draw(mosaic, in: ctx)
+        let color = NSBitmapImageRep(cgImage: ctx.makeImage()!).colorAt(x: 10, y: 10)?.usingColorSpace(.sRGB)
+        #expect(color?.redComponent == 0)
+    }
+
+    @Test func detachedCopyKeepsThePixels() {
+        let copy = image().cropping(to: CGRect(x: 0, y: 0, width: 10, height: 10))!.detachedCopy()
+        #expect(copy.width == 10 && copy.height == 10)
+        let color = NSBitmapImageRep(cgImage: copy).colorAt(x: 5, y: 5)?.usingColorSpace(.sRGB)
+        #expect(color?.redComponent == 1 && color?.blueComponent == 0)
+    }
+}
+
+@Suite struct KeychainMigrationTests {
+    private func run(_ legacy: Keychain.Lookup, storeSucceeds: Bool = true) -> (finished: Bool, stored: Bool, removed: Bool) {
+        var stored = false, removed = false
+        let finished = Keychain.migrateLegacyKey(legacy,
+                                                 store: { _ in stored = true; return storeSucceeds },
+                                                 remove: { removed = true; return true })
+        return (finished, stored, removed)
+    }
+
+    @Test func deniedAccessIsRetriedAndTouchesNothing() {
+        let r = run(.unavailable)
+        #expect(!r.finished && !r.stored && !r.removed)
+    }
+
+    @Test func failedStoreKeepsTheOldKey() {
+        let r = run(.found("k"), storeSucceeds: false)
+        #expect(!r.finished && r.stored && !r.removed)
+    }
+
+    @Test func successMovesTheKey() {
+        let r = run(.found("k"))
+        #expect(r.finished && r.stored && r.removed)
+    }
+
+    @Test func nothingToMigrateFinishes() {
+        #expect(run(.missing).finished)
+    }
+}
+
+@Suite struct HistoryWriteFailureTests {
+    @MainActor @Test func failedWriteDropsOnlyTheNewItem() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("shocrot-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = HistoryStore(directory: dir)
+        let ctx = CGContext(data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue)!
+        let picture = ctx.makeImage()!
+        let kept = try #require(store.add(picture, scale: 1))
+        store.finishPendingWrites()
+        // Writes to a directory that no longer exists fail.
+        try FileManager.default.removeItem(at: dir)
+        let failed = try #require(store.add(picture, scale: 1))
+        store.finishPendingWrites()
+        for _ in 0..<100 {
+            guard store.items.contains(where: { $0.id == failed }) else { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(store.items.map(\.id) == [kept])
+    }
+}
+
+@Suite struct KeychainOriginTests {
+    @Test func sameServerSharesAnOrigin() {
+        #expect(Keychain.origin(of: "https://API.openai.com/v1/") == "https://api.openai.com")
+        #expect(Keychain.origin(of: "http://localhost:11434/v1") == "http://localhost:11434")
+    }
+
+    @Test func differentServersDoNot() {
+        #expect(Keychain.origin(of: "https://api.openai.com/v1") != Keychain.origin(of: "https://api.deepseek.com/v1"))
+        #expect(Keychain.origin(of: "not a url") == nil)
+    }
+}
+
+@Suite struct HistoryRebuildTests {
+    @Test func recoversImagesAndIgnoresOtherFiles() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let c = CGContext(data: nil, width: 40, height: 20, bitsPerComponent: 8, bytesPerRow: 0,
+                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let id = UUID()
+        try ImageOutput.data(c.makeImage()!, format: .png, scale: 2)!
+            .write(to: dir.appendingPathComponent("\(id.uuidString).png"))
+        try Data("x".utf8).write(to: dir.appendingPathComponent("index.corrupt.json"))
+        let items = HistoryStore.rebuildItems(in: dir)
+        #expect(items.map(\.id) == [id])
+        #expect(items.first?.scale == 2)
+        #expect(items.first?.pixelSize == CGSize(width: 40, height: 20))
+    }
+}
+
+@Suite struct HotKeyRuleTests {
+    private func event(_ flags: NSEvent.ModifierFlags, _ code: Int) -> NSEvent {
+        NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
+                         characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: UInt16(code))!
+    }
+
+    @Test func shiftAloneIsNotEnough() {
+        #expect(HotKey(event: event(.shift, kVK_ANSI_A)) == nil)
+        #expect(HotKey(event: event([.shift, .option], kVK_ANSI_A)) != nil)
+        #expect(HotKey(event: event([], kVK_F5)) != nil)
     }
 }

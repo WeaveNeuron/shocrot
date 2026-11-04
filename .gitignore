@@ -3,3 +3,11 @@ build/
 *.xcodeproj
 .DS_Store
 .swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.vscode/
+.idea/
+*.p12
+*.pem
+.env

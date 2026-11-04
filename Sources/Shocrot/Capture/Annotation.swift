@@ -126,10 +126,15 @@ struct AnnotationRenderer {
             ctx.addPath(smoothPath(first: first, rest: a.points.dropFirst()))
             ctx.strokePath()
         case .mosaic:
-            guard a.points.count >= 2, let img = mosaicImage() else { return }
+            guard a.points.count >= 2 else { return }
             ctx.clip(to: rect(a.points[0], a.points[1]))
             ctx.interpolationQuality = .none
-            ctx.draw(img, in: backdropRect)
+            if let img = mosaicImage() {
+                ctx.draw(img, in: backdropRect)
+            } else { // the area must never stay readable
+                ctx.setFillColor(NSColor.black.cgColor)
+                ctx.fill(backdropRect)
+            }
         case .text:
             guard let p = a.points.first, !a.text.isEmpty else { return }
             let str = NSAttributedString(string: a.text, attributes: Annotation.textAttributes(color: a.color, width: a.width))

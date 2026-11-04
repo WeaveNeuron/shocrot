@@ -19,15 +19,45 @@ final class HistoryStore: ObservableObject {
     private var indexURL: URL { directory.appendingPathComponent("index.json") }
     private let queue = DispatchQueue(label: "shocrot.history", qos: .utility)
 
-    private init() {
+    private convenience init() {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        directory = support.appendingPathComponent("Shocrot/History", isDirectory: true)
+        self.init(directory: support.appendingPathComponent("Shocrot/History", isDirectory: true))
+    }
+
+    init(directory: URL) {
+        self.directory = directory
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if let data = try? Data(contentsOf: indexURL) {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            items = (try? decoder.decode([HistoryItem].self, from: data)) ?? []
+            if let decoded = try? decoder.decode([HistoryItem].self, from: data) {
+                items = decoded
+            } else {
+                // Don't let the next save overwrite the index and orphan every image.
+                try? FileManager.default.removeItem(at: directory.appendingPathComponent("index.corrupt.json"))
+                try? FileManager.default.moveItem(at: indexURL, to: directory.appendingPathComponent("index.corrupt.json"))
+                items = Self.rebuildItems(in: directory)
+                persist()
+            }
         }
+    }
+
+    /// Recovers the list from the images themselves; only the OCR text is lost.
+    static func rebuildItems(in directory: URL) -> [HistoryItem] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.creationDateKey])) ?? []
+        let items = files.compactMap { url -> HistoryItem? in
+            guard url.pathExtension == "png", let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent),
+                  let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+                  let w = props[kCGImagePropertyPixelWidth] as? CGFloat,
+                  let h = props[kCGImagePropertyPixelHeight] as? CGFloat else { return nil }
+            let date = (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+            let dpi = props[kCGImagePropertyDPIWidth] as? CGFloat
+            return HistoryItem(id: id, date: date, fileName: url.lastPathComponent,
+                               scale: dpi.map { max(1, ($0 / 72).rounded()) } ?? (NSScreen.main?.backingScaleFactor ?? 2),
+                               text: nil, pixelSize: CGSize(width: w, height: h))
+        }
+        return items.sorted { $0.date > $1.date }
     }
 
     func url(for item: HistoryItem) -> URL { directory.appendingPathComponent(item.fileName) }
@@ -54,14 +84,35 @@ final class HistoryStore: ObservableObject {
                                pixelSize: CGSize(width: image.width, height: image.height))
         let url = url(for: item)
         queue.async {
-            guard let data = ImageOutput.data(image, format: .png) else { return }
-            try? data.write(to: url)
-            DispatchQueue.main.async { self.objectWillChange.send() } // refresh thumbnails
+            let result = Result {
+                guard let data = ImageOutput.data(image, format: .png, scale: scale) else { throw CocoaError(.fileWriteUnknown) }
+                try data.write(to: url, options: .atomic)
+            }
+            DispatchQueue.main.async { self.finishAdding(id, result) }
         }
         items.insert(item, at: 0)
-        trim()
         persist()
         return id
+    }
+
+    /// Older captures make room only once the new one is safely on disk.
+    private func finishAdding(_ id: UUID, _ result: Result<Void, Error>) {
+        switch result {
+        case .success:
+            objectWillChange.send() // refresh thumbnails
+            guard items.count > HistoryStore.limit else { return }
+            trim()
+            persist()
+        case let .failure(error):
+            items.removeAll { $0.id == id }
+            persist()
+            Feedback.error(error)
+        }
+    }
+
+    /// Blocks until queued file and index writes are on disk.
+    func finishPendingWrites() {
+        queue.sync {}
     }
 
     func setText(_ text: String, for id: UUID) {
@@ -70,21 +121,27 @@ final class HistoryStore: ObservableObject {
         persist()
     }
 
+    /// Removal shares the writer's queue, so it can't overtake a write that is still pending.
+    private func removeFile(of item: HistoryItem) {
+        let url = url(for: item)
+        queue.async { try? FileManager.default.removeItem(at: url) }
+    }
+
     func delete(_ item: HistoryItem) {
-        try? FileManager.default.removeItem(at: url(for: item))
+        removeFile(of: item)
         items.removeAll { $0.id == item.id }
         persist()
     }
 
     func clear() {
-        items.forEach { try? FileManager.default.removeItem(at: url(for: $0)) }
+        items.forEach(removeFile)
         items.removeAll()
         persist()
     }
 
     private func trim() {
         while items.count > HistoryStore.limit, let last = items.popLast() {
-            try? FileManager.default.removeItem(at: url(for: last))
+            removeFile(of: last)
         }
     }
 

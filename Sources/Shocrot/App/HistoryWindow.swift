@@ -107,7 +107,7 @@ private struct HistoryCell: View {
                         action("doc.on.doc", "复制图片") { copy() }
                         action("text.viewfinder", "识别文字") { ocr() }
                         action("pin", "贴图") { pin() }
-                        action("square.and.arrow.down", "另存为") { if let img = image { ImageOutput.saveAs(img) } }
+                        action("square.and.arrow.down", "另存为") { if let img = image { ImageOutput.saveAs(img, scale: item.scale) } }
                         action("trash", "删除") { HistoryStore.shared.delete(item) }
                     }
                 }
@@ -130,9 +130,9 @@ private struct HistoryCell: View {
             }
             .font(.caption)
         }
-        .task(id: item.id) { thumb = HistoryStore.shared.thumbnail(for: item) }
+        .task(id: item.id) { await loadThumbnail() }
         .onReceive(HistoryStore.shared.objectWillChange) { _ in
-            if thumb == nil { DispatchQueue.main.async { thumb = HistoryStore.shared.thumbnail(for: item) } }
+            if thumb == nil { Task { await loadThumbnail() } }
         }
         .contextMenu {
             Button("复制图片") { copy() }
@@ -146,6 +146,12 @@ private struct HistoryCell: View {
     }
 
     private var image: CGImage? { HistoryStore.shared.image(for: item) }
+
+    /// Decoding takes ~100 ms for a full-screen capture, far too long for the main thread.
+    private func loadThumbnail() async {
+        let item = item
+        thumb = await Task.detached(priority: .utility) { HistoryStore.shared.thumbnail(for: item) }.value
+    }
 
     private func copy() {
         guard let img = image else { return }

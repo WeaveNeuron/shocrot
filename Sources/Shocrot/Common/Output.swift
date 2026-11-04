@@ -3,8 +3,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 enum ImageOutput {
-    static func data(_ image: CGImage, format: ImageFormat) -> Data? {
+    /// `scale` is written as the file's DPI (144 for Retina), so other apps place it at its real size.
+    static func data(_ image: CGImage, format: ImageFormat, scale: CGFloat) -> Data? {
         let rep = NSBitmapImageRep(cgImage: image)
+        rep.size = CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale)
         switch format {
         case .png: return rep.representation(using: .png, properties: [:])
         case .jpeg: return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.9])
@@ -75,13 +77,24 @@ enum ImageOutput {
         NSPasteboard.general.writeObjects([url as NSURL])
     }
 
-    static func copy(_ image: CGImage, scale: CGFloat) {
-        let pb = NSPasteboard.general
+    /// Lets tests observe when clipboard data is really encoded.
+    nonisolated(unsafe) static var onClipboardEncode: (NSPasteboard.PasteboardType) -> Void = { _ in }
+
+    /// Encoding a full screen takes ~200 ms and the TIFF is ~60 MB, so both are made only when an app asks.
+    static func copy(_ image: CGImage, scale: CGFloat, to pb: NSPasteboard = .general) {
         pb.clearContents()
         let item = NSPasteboardItem()
-        if let png = data(image, format: .png) { item.setData(png, forType: .png) }
-        if let tiff = nsImage(image, scale: scale).tiffRepresentation { item.setData(tiff, forType: .tiff) }
+        let provider = ClipboardImage(image: image, scale: scale, onEncode: onClipboardEncode)
+        item.setDataProvider(provider, forTypes: [.png, .tiff])
         pb.writeObjects([item])
+        if pb == .general { ClipboardImage.current = provider }
+    }
+
+    /// Promised clipboard data dies with the process; hand it over before quitting.
+    static func resolveClipboard() {
+        guard ClipboardImage.current != nil else { return }
+        _ = NSPasteboard.general.data(forType: .png)
+        _ = NSPasteboard.general.data(forType: .tiff)
     }
 
     /// Renders text as a light note card (for pinning copied text). Long text wraps at a readable width.
@@ -133,19 +146,36 @@ enum ImageOutput {
         return url
     }
 
-    /// Quick-save into the configured folder. Returns the written URL.
-    @discardableResult
-    static func save(_ image: CGImage) throws -> URL {
-        let settings = Settings.shared
-        let dir = settings.saveDirectory
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = uniqueURL(in: dir, ext: settings.imageFormat.ext)
-        guard let data = data(image, format: settings.imageFormat) else { throw CocoaError(.fileWriteUnknown) }
-        try data.write(to: url)
-        return url
+    /// One at a time: choosing a free name and writing the file must not interleave with another save.
+    private static let saveQueue = DispatchQueue(label: "shocrot.save", qos: .userInitiated)
+
+    static func save(_ image: CGImage, scale: CGFloat, format: ImageFormat, in dir: URL) async throws -> URL {
+        try await withCheckedThrowingContinuation { cont in
+            saveQueue.async {
+                cont.resume(with: Result {
+                    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                    guard let encoded = data(image, format: format, scale: scale) else { throw CocoaError(.fileWriteUnknown) }
+                    let url = uniqueURL(in: dir, ext: format.ext)
+                    try encoded.write(to: url, options: .withoutOverwriting)
+                    return url
+                })
+            }
+        }
     }
 
-    static func saveAs(_ image: CGImage) {
+    /// Quick-save into the configured folder. Returns the written URL.
+    @MainActor
+    static func saveInBackground(_ image: CGImage, scale: CGFloat) async throws -> URL {
+        let settings = Settings.shared
+        return try await save(image, scale: scale, format: settings.imageFormat, in: settings.saveDirectory)
+    }
+
+    /// Blocks until the saves requested so far are on disk.
+    static func finishPendingSaves() {
+        saveQueue.sync {}
+    }
+
+    static func saveAs(_ image: CGImage, scale: CGFloat) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png, .jpeg]
         panel.nameFieldStringValue = timestampName + "." + Settings.shared.imageFormat.ext
@@ -156,12 +186,41 @@ enum ImageOutput {
             guard response == .OK, let url = panel.url else { return }
             let format: ImageFormat = ["jpg", "jpeg"].contains(url.pathExtension.lowercased()) ? .jpeg : .png
             do {
-                try data(image, format: format)?.write(to: url)
+                guard let encoded = data(image, format: format, scale: scale) else { throw CocoaError(.fileWriteUnknown) }
+                try encoded.write(to: url)
                 Feedback.toast("已保存到 \(url.lastPathComponent)", symbol: "checkmark.circle.fill")
             } catch {
                 Feedback.error(error)
             }
         }
+    }
+}
+
+/// Encodes the copied image on demand, for whichever format the pasting app asks for.
+final class ClipboardImage: NSObject, NSPasteboardItemDataProvider {
+    static var current: ClipboardImage?
+
+    private let image: CGImage
+    private let scale: CGFloat
+    private let onEncode: (NSPasteboard.PasteboardType) -> Void
+
+    init(image: CGImage, scale: CGFloat, onEncode: @escaping (NSPasteboard.PasteboardType) -> Void = { _ in }) {
+        self.image = image
+        self.scale = scale
+        self.onEncode = onEncode
+    }
+
+    func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
+        onEncode(type)
+        if type == .png, let png = ImageOutput.data(image, format: .png, scale: scale) {
+            item.setData(png, forType: .png)
+        } else if type == .tiff, let tiff = ImageOutput.nsImage(image, scale: scale).tiffRepresentation {
+            item.setData(tiff, forType: .tiff)
+        }
+    }
+
+    func pasteboardFinishedWithDataProvider(_ pasteboard: NSPasteboard) {
+        if ClipboardImage.current === self { ClipboardImage.current = nil }
     }
 }
 

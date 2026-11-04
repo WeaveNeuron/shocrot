@@ -62,6 +62,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private var quitReplied = false
+
+    /// A running recording is saved first; the cap keeps a stuck stream from blocking the quit.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard ScreenRecording.needsFinishing else { return .terminateNow }
+        quitReplied = false
+        let reply = { [weak self] in
+            guard let self, !self.quitReplied else { return }
+            self.quitReplied = true
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        Task { @MainActor in
+            await ScreenRecording.finishBeforeQuit()
+            reply()
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(10))
+            reply()
+        }
+        return .terminateLater
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        ImageOutput.resolveClipboard()
+        ImageOutput.finishPendingSaves()
+        HistoryStore.shared.finishPendingWrites()
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // Launching the app again from Finder/Spotlight opens Settings.
         if !flag { SettingsWindow.show() }

@@ -37,6 +37,10 @@ enum ScreenCapturer {
 
     /// Captures every connected display at native resolution.
     static func captureAllScreens() async throws -> [ScreenSnapshot] {
+        try await capture(NSScreen.screens)
+    }
+
+    static func capture(_ screens: [NSScreen]) async throws -> [ScreenSnapshot] {
         #if DEBUG
         if let demo = demoSnapshots() { return demo }
         #endif
@@ -44,7 +48,6 @@ enum ScreenCapturer {
         // Capturing a screen rectangle skips the shareable-content query, which roughly halves the
         // time from hotkey to overlay. Displays are captured in parallel.
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-        let screens = NSScreen.screens
         let images = try await withThrowingTaskGroup(of: (Int, CGImage).self) { group in
             for (i, screen) in screens.enumerated() {
                 let f = screen.frame

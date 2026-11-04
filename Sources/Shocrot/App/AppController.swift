@@ -21,6 +21,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         statusItem.menu = menu
 
         NSApp.mainMenu = makeMainMenu()
+        Keychain.migrateLegacyLLMKey(to: Settings.shared.llm.baseURL)
         registerHotKeys()
         VisionOCREngine.warmUp(languages: Settings.shared.ocrLanguages)
         TranslatePanel.prepare()
@@ -112,7 +113,10 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         guard let raw = sender.representedObject as? String, let action = HotKeyAction(rawValue: raw) else { return }
         // Start as soon as the menu has faded out, so it isn't captured but no time is wasted.
         Task { @MainActor in
-            for _ in 0..<30 where Self.menuOnScreen() { try? await Task.sleep(for: .milliseconds(10)) }
+            for _ in 0..<30 {
+                guard Self.menuOnScreen() else { break }
+                try? await Task.sleep(for: .milliseconds(10))
+            }
             perform(action)
         }
     }
@@ -178,13 +182,18 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
 
     // MARK: - Capture
 
+    /// A capture is being taken but its overlay isn't up yet; further requests are dropped.
+    private var isPreparingCapture = false
+
     func startCapture(_ mode: CaptureMode) {
-        guard !CaptureSession.isActive, !ScrollCapture.isActive, !ScreenRecording.isActive else { return }
+        guard !isPreparingCapture, !CaptureSession.isActive, !ScrollCapture.isActive, !ScreenRecording.isActive else { return }
         guard ScreenCapturer.canCapture else { OnboardingWindow.show(); return }
         // Keep our own transient windows out of the frozen screen.
         TranslatePanel.dismissUnpinned()
         CapturePreview.close(animated: false)
+        isPreparingCapture = true
         Task { @MainActor in
+            defer { isPreparingCapture = false }
             do {
                 let snapshots = try await ScreenCapturer.captureAllScreens()
                 CaptureSession.start(mode: mode, snapshots: snapshots) { [weak self] outcome, result in
@@ -211,20 +220,26 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     func captureFullScreen() {
+        guard !isPreparingCapture, !CaptureSession.isActive, !ScrollCapture.isActive, !ScreenRecording.isActive else { return }
         guard ScreenCapturer.canCapture else { OnboardingWindow.show(); return }
+        TranslatePanel.dismissUnpinned()
+        CapturePreview.close(animated: false)
+        let mouse = NSEvent.mouseLocation
+        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.screens.first else { return }
+        isPreparingCapture = true
         Task { @MainActor in
             do {
-                let snapshots = try await ScreenCapturer.captureAllScreens()
-                let mouse = NSEvent.mouseLocation
-                guard let snap = snapshots.first(where: { $0.screen.frame.contains(mouse) }) ?? snapshots.first else { return }
+                let snaps = try await ScreenCapturer.capture([screen])
+                isPreparingCapture = false
+                guard let snap = snaps.first else { return }
                 let scale = CGFloat(snap.image.width) / snap.screen.frame.width
-                let result = CaptureResult(image: snap.image, rawImage: snap.image, globalRect: snap.screen.frame, scale: scale)
                 Feedback.shutter()
                 HistoryStore.shared.add(snap.image, scale: scale)
                 ImageOutput.copy(snap.image, scale: scale)
-                let url = try ImageOutput.save(result.image)
-                CapturePreview.show(image: result.image, scale: scale, status: "已复制并保存", savedURL: url, on: snap.screen)
+                let url = try await ImageOutput.saveInBackground(snap.image, scale: scale)
+                CapturePreview.show(image: snap.image, scale: scale, status: "已复制并保存", savedURL: url, on: snap.screen)
             } catch {
+                isPreparingCapture = false
                 Feedback.error(error)
             }
         }
@@ -262,21 +277,23 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
             ImageOutput.copy(result.image, scale: result.scale)
             CapturePreview.show(image: result.image, scale: result.scale, status: "已复制", savedURL: nil, on: screen)
         case .save:
-            do {
-                let url = try ImageOutput.save(result.image)
-                CapturePreview.show(image: result.image, scale: result.scale, status: "已保存", savedURL: url, on: screen)
-            } catch {
-                Feedback.error(error)
+            Task { @MainActor in
+                do {
+                    let url = try await ImageOutput.saveInBackground(result.image, scale: result.scale)
+                    CapturePreview.show(image: result.image, scale: result.scale, status: "已保存", savedURL: url, on: screen)
+                } catch {
+                    Feedback.error(error)
+                }
             }
         case .saveAs:
-            ImageOutput.saveAs(result.image)
+            ImageOutput.saveAs(result.image, scale: result.scale)
         case .pin:
             PinWindow.pin(result.image, scale: result.scale, at: result.globalRect)
         case .translate:
-            translate(image: result.rawImage, historyID: historyID,
+            translate(image: result.ocrImage, historyID: historyID,
                       near: CGPoint(x: result.globalRect.minX + 40, y: result.globalRect.minY))
         case .ocr:
-            recognize(image: result.rawImage, scale: result.scale, historyID: historyID)
+            recognize(image: result.ocrImage, scale: result.scale, historyID: historyID)
         case .scroll, .record:
             break
         }

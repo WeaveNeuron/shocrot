@@ -16,7 +16,7 @@ enum TranslationServices {
         var services: [TranslationService] = []
         if s.appleTranslateEnabled { services.append(AppleTranslationService()) }
         if s.googleTranslateEnabled { services.append(GoogleTranslationService()) }
-        if s.llm.enabled { services.append(LLMTranslationService(config: s.llm, apiKey: Keychain.llmAPIKey)) }
+        if s.llm.enabled { services.append(LLMTranslationService(config: s.llm, apiKey: Keychain.llmAPIKey(for: s.llm.baseURL))) }
         return services
     }
 }
