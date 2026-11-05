@@ -59,3 +59,5 @@ scripts/build_app.sh --install  # 同时安装到 /Applications
 版本号：`SHOCROT_VERSION=1.2.0 scripts/build_app.sh` 指定版本，默认取 `VERSION` 变量；构建号自动取 git 提交数。
 
 调试：`SHOCROT_DEMO_IMAGE=<png> .build/debug/Shocrot` 会用该图片模拟屏幕并自动进入截图（仅 Debug 构建），无需录屏权限即可调试覆盖层。
+
+本机 `swift build` / `swift test` 时，SwiftPM 会往用户的 TemporaryItems 写 `output-file-map.json`。沙箱若拒绝这次写入（EPERM），报错看起来像普通 I/O 错误，测试还没启动就停了。源码没有这个缺陷；放开 TemporaryItems 的写入后再跑即可。
