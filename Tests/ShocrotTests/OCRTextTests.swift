@@ -107,3 +107,39 @@ struct OCRReadingOrderTests {
         #expect(!VisionOCREngine.shouldUpscale(width: 500, height: 8000))  // a long narrow column
     }
 }
+
+@Suite("OCR bands for tall images")
+struct OCRBandTests {
+    @Test func ordinaryImagesAreReadInOnePass() {
+        #expect(VisionOCREngine.bands(height: 1964) == [.init(rows: 0 ..< 1964, owns: 0 ..< 1964)])
+        #expect(VisionOCREngine.bands(height: 3000).count == 1)
+    }
+
+    @Test(arguments: [3001, 3800, 6000, 12_345, 30_000])
+    func bandsCoverTheImageAndOverlap(height: Int) throws {
+        let bands = VisionOCREngine.bands(height: height)
+        #expect(bands.count > 1)
+        #expect(bands.first?.rows.lowerBound == 0 && bands.last?.rows.upperBound == height)
+        #expect(bands.first?.owns.lowerBound == 0 && bands.last?.owns.upperBound == height)
+        for band in bands {
+            #expect(band.rows.count <= VisionOCREngine.bandHeight)
+            #expect(band.rows.lowerBound <= band.owns.lowerBound && band.owns.upperBound <= band.rows.upperBound)
+        }
+        for (a, b) in zip(bands, bands.dropFirst()) {
+            #expect(a.owns.upperBound == b.owns.lowerBound)                                   // no gap, no double count
+            #expect(a.rows.upperBound - b.rows.lowerBound >= VisionOCREngine.bandOverlap)
+            // A line up to half the overlap above or below the cut is still whole in the band that owns it.
+            #expect(a.owns.upperBound + VisionOCREngine.bandOverlap / 2 <= a.rows.upperBound)
+            #expect(b.owns.lowerBound - VisionOCREngine.bandOverlap / 2 >= b.rows.lowerBound)
+        }
+    }
+
+    @Test func boxesMoveFromTheBandToTheWholeImage() {
+        // Band covering rows 1700..<3700 of a 10,000-row image; a line at the band's top (normalized y 0.9...1.0).
+        let box = VisionOCREngine.place(CGRect(x: 0.1, y: 0.9, width: 0.5, height: 0.1), in: 1700 ..< 3700, imageHeight: 10_000)
+        #expect(abs(box.minX - 0.1) < 1e-9 && abs(box.width - 0.5) < 1e-9)
+        #expect(abs(box.height - 0.02) < 1e-9)          // 200 rows of 10,000
+        #expect(abs(box.maxY - (1 - 0.17)) < 1e-9)      // its top is row 1700
+        #expect(abs(box.minY - (1 - 0.19)) < 1e-9)      // its bottom is row 1900
+    }
+}
