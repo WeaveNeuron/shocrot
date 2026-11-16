@@ -11,3 +11,4 @@ xcuserdata/
 *.p12
 *.pem
 .env
+.wrangler/
