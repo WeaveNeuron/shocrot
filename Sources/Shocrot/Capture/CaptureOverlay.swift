@@ -731,6 +731,10 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             session?.activate(self)
             self.selection = nil
             hideToolbar()
+            // A plain click picks what is under the pointer now, not the window hovered before the last selection.
+            snapDepth = 0
+            snapLevels = []
+            updateHover()
             phase = .creating(start: p, dragged: false)
             needsDisplay = true
         }
