@@ -120,8 +120,7 @@ struct VisionOCREngine: OCREngine {
         }
         let barcodeRequest = VNDetectBarcodesRequest()
 
-        // Tiny selections recognize much better when upscaled.
-        let input = image.width < 600 || image.height < 120 ? (image.upscaled(by: 2) ?? image) : image
+        let input = shouldUpscale(width: image.width, height: image.height) ? (image.upscaled(by: 2) ?? image) : image
         let handler = VNImageRequestHandler(cgImage: input, options: [:])
         try handler.perform([textRequest, barcodeRequest])
 
@@ -136,6 +135,12 @@ struct VisionOCREngine: OCREngine {
 }
 
 extension VisionOCREngine {
+    /// Tiny selections recognize much better at twice the size. A long strip that is narrow in only one direction
+    /// (a column of a web page, say) already has enough pixels; doubling it quadruples the work for nothing.
+    static func shouldUpscale(width: Int, height: Int) -> Bool {
+        (width < 600 || height < 120) && width * height <= 1_000_000
+    }
+
     /// Top to bottom, then left to right within a row. Lines are grouped into rows first: "on the same row" isn't
     /// transitive (A and B may share a row, B and C too, A and C not), so it can't serve as a sort comparator.
     /// A row is measured against its top line, so a slightly slanted page doesn't chain rows together.

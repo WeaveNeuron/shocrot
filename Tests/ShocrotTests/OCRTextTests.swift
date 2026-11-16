@@ -98,3 +98,12 @@ struct OCRReadingOrderTests {
         #expect(order.first == "c0")
     }
 }
+
+@Suite struct OCRUpscaleTests {
+    @Test func smallSelectionsAreUpscaledLongStripsAreNot() {
+        #expect(VisionOCREngine.shouldUpscale(width: 300, height: 80))     // a word or two
+        #expect(VisionOCREngine.shouldUpscale(width: 2400, height: 90))    // one line of text
+        #expect(!VisionOCREngine.shouldUpscale(width: 1600, height: 1000)) // a normal area
+        #expect(!VisionOCREngine.shouldUpscale(width: 500, height: 8000))  // a long narrow column
+    }
+}
