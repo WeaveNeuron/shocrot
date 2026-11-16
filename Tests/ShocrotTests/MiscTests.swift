@@ -545,3 +545,11 @@ struct TransformTests {
         #expect(!Settings.launchesAtLogin(.notFound))
     }
 }
+
+@Suite struct TimestampNameTests {
+    @Test func usesGregorianDigitsAndTwentyFourHours() {
+        let date = Date(timeIntervalSince1970: 1_794_844_800) // 2026-11-16 16:00:00 UTC
+        #expect(ImageOutput.timestampName(for: date, timeZone: TimeZone(identifier: "UTC")!)
+                == "Shocrot 2026-11-16 at 16.00.00")
+    }
+}
