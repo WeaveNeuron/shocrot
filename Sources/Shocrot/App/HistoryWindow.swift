@@ -48,7 +48,7 @@ struct HistoryView: View {
                 .padding(.vertical, 5)
                 .background(.background.secondary, in: RoundedRectangle(cornerRadius: 7))
                 .frame(width: 220)
-                Button { NSWorkspace.shared.open(Settings.shared.saveDirectory) } label: { Image(systemName: "folder") }
+                Button { AppController.shared.openFolder() } label: { Image(systemName: "folder") }
                     .help("打开截图保存文件夹")
                 Button { confirmClear = true } label: { Image(systemName: "trash") }
                     .help("清空历史记录")

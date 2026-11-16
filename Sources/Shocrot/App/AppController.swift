@@ -174,7 +174,8 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     @objc func showHistory() { HistoryWindow.show() }
     @objc func showSettings() { SettingsWindow.show() }
     @objc func showOnboarding() { OnboardingWindow.show() }
-    @objc private func openFolder() {
+    /// Created first: before the first save the folder doesn't exist, and opening it would silently do nothing.
+    @objc func openFolder() {
         try? FileManager.default.createDirectory(at: Settings.shared.saveDirectory, withIntermediateDirectories: true)
         NSWorkspace.shared.open(Settings.shared.saveDirectory)
     }
