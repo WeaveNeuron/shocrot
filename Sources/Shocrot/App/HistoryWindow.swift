@@ -50,8 +50,10 @@ struct HistoryView: View {
                 .frame(width: 220)
                 Button { AppController.shared.openFolder() } label: { Image(systemName: "folder") }
                     .help("打开截图保存文件夹")
+                    .accessibilityLabel("打开截图保存文件夹")
                 Button { confirmClear = true } label: { Image(systemName: "trash") }
                     .help("清空历史记录")
+                    .accessibilityLabel("清空历史记录")
                     .disabled(store.items.isEmpty)
             }
             .buttonStyle(.borderless)
@@ -179,5 +181,6 @@ private struct HistoryCell: View {
         }
         .buttonStyle(.plain)
         .help(help)
+        .accessibilityLabel(help)
     }
 }
