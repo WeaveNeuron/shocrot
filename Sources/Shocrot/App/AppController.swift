@@ -379,13 +379,25 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         Task { @MainActor in
             let wasAutoCopy = Settings.shared.ocrAutoCopy
             await model.run()
+            let codes = model.result?.barcodes ?? []
             if let error = model.error {
                 Feedback.toast(error, symbol: "exclamationmark.triangle.fill")
+            } else if model.text.isEmpty, !codes.isEmpty {
+                // Without the result window the code's content would otherwise be lost.
+                ImageOutput.copyText(codes.joined(separator: "\n"))
+                Feedback.toast(codes.count == 1 ? "已复制二维码内容" : "已复制 \(codes.count) 个二维码的内容")
             } else if model.text.isEmpty {
                 Feedback.toast("没有识别到文字", symbol: "exclamationmark.triangle.fill")
             } else {
                 if !wasAutoCopy { ImageOutput.copyText(model.text) }
-                Feedback.toast("已复制 \(model.text.filter { !$0.isWhitespace }.count) 个字")
+                let count = "已复制 \(model.text.filter { !$0.isWhitespace }.count) 个字"
+                if codes.isEmpty {
+                    Feedback.toast(count)
+                } else {
+                    Feedback.offer(count + "，另有二维码", symbol: "qrcode", action: "复制二维码") {
+                        ImageOutput.copyText(codes.joined(separator: "\n"))
+                    }
+                }
             }
         }
     }
