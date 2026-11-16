@@ -67,3 +67,34 @@ struct OCRTextTests {
         #expect(OCRResult(lines: [], barcodes: []).text(keepLineBreaks: false).isEmpty)
     }
 }
+
+@Suite("OCR reading order")
+struct OCRReadingOrderTests {
+    private func line(_ text: String, x: CGFloat, midY: CGFloat, height: CGFloat = 0.04) -> OCRLine {
+        OCRLine(text: text, confidence: 1, box: CGRect(x: x, y: midY - height / 2, width: 0.2, height: height))
+    }
+
+    @Test func rowsTopToBottomThenLeftToRight() {
+        let lines = [line("b2", x: 0.5, midY: 0.50), line("a1", x: 0.1, midY: 0.80),
+                     line("b1", x: 0.1, midY: 0.51), line("a2", x: 0.5, midY: 0.79)]
+        #expect(VisionOCREngine.readingOrder(lines).map(\.text) == ["a1", "a2", "b1", "b2"])
+    }
+
+    /// A tall line shares a row with a line above and one below it that don't share a row with each other:
+    /// a < b and b < c by position on the row, yet c is above a. A pairwise comparator has no consistent answer.
+    @Test func orderDoesNotDependOnTheInputOrder() {
+        let lines = [line("a", x: 0.1, midY: 0.500), line("b", x: 0.3, midY: 0.515, height: 0.10),
+                     line("c", x: 0.5, midY: 0.530), line("next", x: 0.1, midY: 0.30)]
+        for _ in 0..<50 {
+            #expect(VisionOCREngine.readingOrder(lines.shuffled()).map(\.text) == ["b", "c", "a", "next"])
+        }
+    }
+
+    @Test func slantedRowsDoNotChainTogether() {
+        // Each line sits a little lower than the one before it, as on a tilted photo of a table.
+        let lines = (0..<6).map { line("c\($0)", x: CGFloat($0) * 0.15, midY: 0.6 - CGFloat($0) * 0.015) }
+        let order = VisionOCREngine.readingOrder(lines).map(\.text)
+        #expect(Set(order) == Set(lines.map(\.text)))
+        #expect(order.first == "c0")
+    }
+}

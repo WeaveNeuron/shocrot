@@ -126,19 +126,33 @@ struct VisionOCREngine: OCREngine {
         try handler.perform([textRequest, barcodeRequest])
 
         let observations = textRequest.results ?? []
-        var lines: [OCRLine] = observations.compactMap { obs in
+        let lines: [OCRLine] = readingOrder(observations.compactMap { obs in
             guard let candidate = obs.topCandidates(1).first else { return nil }
             return OCRLine(text: candidate.string, confidence: candidate.confidence, box: obs.boundingBox)
-        }
-        // Reading order: top to bottom, then left to right within a row.
-        lines.sort { a, b in
-            if abs(a.box.midY - b.box.midY) < min(a.box.height, b.box.height) * 0.5 {
-                return a.box.minX < b.box.minX
-            }
-            return a.box.midY > b.box.midY
-        }
+        })
         let codes = (barcodeRequest.results ?? []).compactMap(\.payloadStringValue)
         return OCRResult(lines: lines, barcodes: Array(NSOrderedSet(array: codes)) as? [String] ?? codes)
+    }
+}
+
+extension VisionOCREngine {
+    /// Top to bottom, then left to right within a row. Lines are grouped into rows first: "on the same row" isn't
+    /// transitive (A and B may share a row, B and C too, A and C not), so it can't serve as a sort comparator.
+    /// A row is measured against its top line, so a slightly slanted page doesn't chain rows together.
+    static func readingOrder(_ lines: [OCRLine]) -> [OCRLine] {
+        let byHeight = lines.sorted { a, b in
+            a.box.midY != b.box.midY ? a.box.midY > b.box.midY : a.box.minX < b.box.minX
+        }
+        var rows: [[OCRLine]] = []
+        for line in byHeight {
+            if let anchor = rows.last?.first,
+               abs(anchor.box.midY - line.box.midY) < min(anchor.box.height, line.box.height) * 0.5 {
+                rows[rows.count - 1].append(line)
+            } else {
+                rows.append([line])
+            }
+        }
+        return rows.flatMap { $0.sorted { $0.box.minX < $1.box.minX } }
     }
 }
 
