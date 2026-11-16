@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import ServiceManagement
 import Testing
 @testable import Shocrot
 
@@ -533,5 +534,14 @@ struct TransformTests {
     @Test func trackpadStepsByDistanceAndNotTooFast() {
         let swipe = (0..<12).map { (CGFloat(5), Double($0) * 0.05) } // 60 pt over 0.55 s
         #expect(run(swipe, precise: true, phased: true) == [1, 1, 1, 1])
+    }
+}
+
+@Suite struct LaunchAtLoginTests {
+    @Test func pendingApprovalShowsAsOn() {
+        #expect(Settings.launchesAtLogin(.enabled))
+        #expect(Settings.launchesAtLogin(.requiresApproval))
+        #expect(!Settings.launchesAtLogin(.notRegistered))
+        #expect(!Settings.launchesAtLogin(.notFound))
     }
 }

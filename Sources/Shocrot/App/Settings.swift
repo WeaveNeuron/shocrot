@@ -181,6 +181,9 @@ final class Settings: ObservableObject {
     @Published var llm: LLMConfig { didSet { d.set(try? JSONEncoder().encode(llm), forKey: "llm") } }
     @Published var launchAtLogin: Bool {
         didSet {
+            // Writing the property back below runs this observer again (it is @Published); that pass only
+            // reflects the system's state and must not register or unregister anything.
+            guard !syncingLaunchAtLogin else { return }
             do {
                 if launchAtLogin { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
                 if launchAtLogin, SMAppService.mainApp.status == .requiresApproval {
@@ -192,9 +195,19 @@ final class Settings: ObservableObject {
                 Feedback.toast("无法更改登录时启动：\(error.localizedDescription)", symbol: "exclamationmark.triangle.fill")
             }
             // Show what the system actually did, not what was asked for.
-            let actual = SMAppService.mainApp.status == .enabled
-            if actual != launchAtLogin { launchAtLogin = actual }
+            let actual = Self.launchesAtLogin(SMAppService.mainApp.status)
+            if actual != launchAtLogin {
+                syncingLaunchAtLogin = true
+                launchAtLogin = actual
+                syncingLaunchAtLogin = false
+            }
         }
+    }
+    private var syncingLaunchAtLogin = false
+
+    /// Registered counts as on even while it waits for the user's approval in System Settings.
+    static func launchesAtLogin(_ status: SMAppService.Status) -> Bool {
+        status == .enabled || status == .requiresApproval
     }
 
     static let availableOCRLanguages: [(code: String, name: String)] = [
@@ -233,7 +246,7 @@ final class Settings: ObservableObject {
         appleTranslateEnabled = d.object(forKey: "appleTranslateEnabled") as? Bool ?? true
         googleTranslateEnabled = d.bool(forKey: "googleTranslateEnabled")  // off: text would leave the Mac
         llm = d.data(forKey: "llm").flatMap { try? JSONDecoder().decode(LLMConfig.self, from: $0) } ?? LLMConfig()
-        launchAtLogin = SMAppService.mainApp.status == .enabled
+        launchAtLogin = Self.launchesAtLogin(SMAppService.mainApp.status)
     }
 }
 
