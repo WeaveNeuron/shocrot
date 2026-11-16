@@ -553,3 +553,22 @@ struct TransformTests {
                 == "Shocrot 2026-11-16 at 16.00.00")
     }
 }
+
+@Suite("LLM reasoning")
+struct ThinkingTests {
+    @Test func reasoningIsHidden() {
+        #expect(LLMTranslationService.stripThinking("<think>plan</think>\n\n你好") == "你好")
+        #expect(LLMTranslationService.stripThinking("\n<think>plan</think>你好") == "你好")
+        #expect(LLMTranslationService.stripThinking("\n<think>still thinking") == "")
+    }
+
+    @Test func aTagStillArrivingShowsNothing() {
+        for partial in ["", "\n", "<", "<th", "<think"] { #expect(LLMTranslationService.stripThinking(partial) == "") }
+    }
+
+    @Test func plainTranslationsAreLeftAlone() {
+        #expect(LLMTranslationService.stripThinking("你好") == "你好")
+        #expect(LLMTranslationService.stripThinking("<b>粗体</b>") == "<b>粗体</b>")
+        #expect(LLMTranslationService.stripThinking("think about it") == "think about it")
+    }
+}
