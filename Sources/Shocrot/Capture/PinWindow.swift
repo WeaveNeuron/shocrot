@@ -128,7 +128,8 @@ final class PinWindow: NSPanel {
 
     override func scrollWheel(with event: NSEvent) {
         if event.modifierFlags.contains(.option) || event.modifierFlags.contains(.command) {
-            // ⌥/⌘ + scroll changes opacity.
+            // ⌥/⌘ + scroll changes opacity. Sideways scrolling (no vertical delta) leaves it alone.
+            guard event.scrollingDeltaY != 0 else { return }
             alphaValue = min(1, max(0.2, alphaValue + (event.scrollingDeltaY > 0 ? 0.05 : -0.05)))
             showLabel("\(Int(alphaValue * 100))% 不透明")
             return
