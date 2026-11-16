@@ -68,6 +68,10 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
+extension Notification.Name {
+    static let hotKeyRecorderStarted = Notification.Name("ShocrotHotKeyRecorderStarted")
+}
+
 final class SettingsRouter: ObservableObject {
     static let shared = SettingsRouter()
     @Published var tab: SettingsTab = .general
@@ -264,11 +268,17 @@ struct HotKeyRecorder: View {
         }
         .buttonStyle(.bordered)
         .onDisappear(perform: stop)
+        // Only one recorder listens at a time; otherwise the first one would swallow the keys meant for this one.
+        .onReceive(NotificationCenter.default.publisher(for: .hotKeyRecorderStarted)) { note in
+            // The other recorder keeps the global shortcuts unregistered until it is done.
+            if note.object as? String != action.rawValue { stop(reregister: false) }
+        }
     }
 
     private func toggle() { recording ? stop() : start() }
 
     private func start() {
+        NotificationCenter.default.post(name: .hotKeyRecorderStarted, object: action.rawValue)
         recording = true
         HotKeyCenter.shared.unregisterAll() // so the current combos reach us
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -289,12 +299,14 @@ struct HotKeyRecorder: View {
         }
     }
 
-    private func stop() {
+    private func stop() { stop(reregister: true) }
+
+    private func stop(reregister: Bool) {
         guard recording || monitor != nil else { return }
         recording = false
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
-        AppController.shared.registerHotKeys()
+        if reregister { AppController.shared.registerHotKeys() }
     }
 }
 
