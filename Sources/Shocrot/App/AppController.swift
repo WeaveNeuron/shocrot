@@ -438,11 +438,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func loadImage(_ url: URL) -> (CGImage, CGFloat)? {
-        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
-        let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
-        let dpi = props?[kCGImagePropertyDPIWidth] as? CGFloat ?? 72
-        return (cg, max(1, round(dpi / 72)))
+        ImageFile.load(url)
     }
 
     @objc func recognizeClipboard() {
