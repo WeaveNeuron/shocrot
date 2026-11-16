@@ -413,6 +413,9 @@ private struct TranslateSettings: View {
                     TextField("接口地址", text: $s.llm.baseURL, prompt: Text("https://…/v1"))
                     SecureField("API Key", text: $apiKey, prompt: Text("本地模型可留空"))
                         .onChange(of: apiKey) { _, key in
+                            // Editing the address reloads the field with that server's key; nothing to store then,
+                            // and a half-typed address (no key, nowhere to put one) is not a failure.
+                            guard key != (Keychain.llmAPIKey(for: s.llm.baseURL) ?? "") else { return }
                             if !Keychain.setLLMAPIKey(key, for: s.llm.baseURL) {
                                 Feedback.toast("API Key 未能保存，请检查接口地址和钥匙串权限", symbol: "exclamationmark.triangle.fill")
                             }
