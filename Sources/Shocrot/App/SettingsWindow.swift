@@ -170,6 +170,14 @@ private struct GeneralSettings: View {
                     }
                 }
             }
+            Section("录屏转 GIF") {
+                Picker("GIF 帧率", selection: $s.gifFrameRate) {
+                    ForEach(GIFOptions.frameRates, id: \.self) { Text("\($0) 帧/秒").tag($0) }
+                }
+                Picker("GIF 最大宽度", selection: $s.gifMaxWidth) {
+                    ForEach(GIFOptions.maxWidths, id: \.self) { Text(GIFOptions.widthTitle($0)).tag($0) }
+                }
+            }
             Section("权限") {
                 ForEach(Permission.allCases) { PermissionRow($0) }
             }

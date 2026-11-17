@@ -375,15 +375,25 @@ extension RecordingModel {
 
 /// Turns a recording into a looping GIF next to it.
 enum GIFExport {
-    static let fps = 12.0
-    static let maxPixelWidth = 960
+    /// Longer than this, the card suggests sending the video instead.
+    static let longClipSeconds: TimeInterval = 60
 
-    static func make(from video: URL) async throws -> URL {
+    static func isLong(_ duration: TimeInterval) -> Bool { duration > longClipSeconds }
+
+    static func duration(of video: URL) async -> TimeInterval? {
+        guard let d = try? await AVURLAsset(url: video).load(.duration).seconds, d.isFinite else { return nil }
+        return d
+    }
+
+    /// Every frame at `fps`, no automatic thinning. `maxWidth` in pixels; nil keeps the recording's size
+    /// (it never scales up).
+    static func make(from video: URL, fps: Double = 12, maxWidth: Int? = nil) async throws -> URL {
         let asset = AVURLAsset(url: video)
         let duration = try await asset.load(.duration).seconds
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: maxPixelWidth, height: maxPixelWidth * 4)
+        // The box only limits the width; the height has room for any aspect ratio.
+        if let maxWidth { generator.maximumSize = CGSize(width: maxWidth, height: 100_000) }
         generator.requestedTimeToleranceBefore = CMTime(value: 1, timescale: 60)
         generator.requestedTimeToleranceAfter = CMTime(value: 1, timescale: 60)
 

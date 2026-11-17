@@ -51,4 +51,39 @@ struct GIFExportTests {
         #expect(first.width == 320 && first.height == 200)
         #expect(await GIFExport.poster(of: clip) != nil)
     }
+
+    private func frames(of gif: URL) throws -> (count: Int, width: Int, height: Int) {
+        let source = try #require(CGImageSourceCreateWithURL(gif as CFURL, nil))
+        let first = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        return (CGImageSourceGetCount(source), first.width, first.height)
+    }
+
+    @Test func usesTheChosenFrameRateAndWidth() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let clip = dir.appendingPathComponent("clip.mp4")
+        try await makeClip(at: clip)
+
+        var f = try frames(of: try await GIFExport.make(from: clip, fps: 10))
+        #expect(f.count == 10 && f.width == 320 && f.height == 200)
+        f = try frames(of: try await GIFExport.make(from: clip, fps: 15, maxWidth: 160))
+        #expect(f.count == 15 && f.width == 160 && f.height == 100)
+        // A cap wider than the recording leaves it as it is.
+        f = try frames(of: try await GIFExport.make(from: clip, fps: 12, maxWidth: 1280))
+        #expect(f.count == 12 && f.width == 320 && f.height == 200)
+        #expect(await GIFExport.duration(of: clip).map { abs($0 - 1) < 0.05 } == true)
+    }
+
+    @Test func asksOnlyAboutClipsOverAMinute() {
+        #expect(!GIFExport.isLong(59.9))
+        #expect(!GIFExport.isLong(60))
+        #expect(GIFExport.isLong(60.5))
+    }
+
+    @Test func onlyOffersKnownOptions() {
+        #expect(GIFOptions.frameRates.contains(GIFOptions.defaultFrameRate) && GIFOptions.defaultFrameRate == 12)
+        #expect(GIFOptions.maxWidths == [0, 1280, 800] && GIFOptions.defaultMaxWidth == 0)
+        #expect(GIFOptions.widthTitle(0) == "原尺寸")
+    }
 }

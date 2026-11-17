@@ -148,6 +148,17 @@ enum AfterCaptureAction: String, CaseIterable, Identifiable {
     }
 }
 
+/// GIF export of a recording. Only these values are offered; anything else in the defaults falls back.
+enum GIFOptions {
+    static let frameRates = [10, 12, 15]
+    static let defaultFrameRate = 12
+    /// 0 = the recording's own width.
+    static let maxWidths = [0, 1280, 800]
+    static let defaultMaxWidth = 0
+
+    static func widthTitle(_ w: Int) -> String { w == 0 ? "原尺寸" : "\(w) 像素" }
+}
+
 /// App-wide preferences backed by UserDefaults.
 final class Settings: ObservableObject {
     static let shared = Settings()
@@ -166,6 +177,8 @@ final class Settings: ObservableObject {
     @Published var saveDirectory: URL { didSet { d.set(saveDirectory.path, forKey: "saveDirectory") } }
     @Published var imageFormat: ImageFormat { didSet { d.set(imageFormat.rawValue, forKey: "imageFormat") } }
     @Published var afterCapture: AfterCaptureAction { didSet { d.set(afterCapture.rawValue, forKey: "afterCapture") } }
+    @Published var gifFrameRate: Int { didSet { d.set(gifFrameRate, forKey: "gifFrameRate") } }
+    @Published var gifMaxWidth: Int { didSet { d.set(gifMaxWidth, forKey: "gifMaxWidth") } }
     @Published var playSound: Bool { didSet { d.set(playSound, forKey: "playSound") } }
     @Published var showMagnifier: Bool { didSet { d.set(showMagnifier, forKey: "showMagnifier") } }
     @Published var showPreview: Bool { didSet { d.set(showPreview, forKey: "showPreview") } }
@@ -232,6 +245,10 @@ final class Settings: ObservableObject {
             ?? pictures.appendingPathComponent("Shocrot", isDirectory: true)
         imageFormat = ImageFormat(rawValue: d.string(forKey: "imageFormat") ?? "") ?? .png
         afterCapture = AfterCaptureAction(rawValue: d.string(forKey: "afterCapture") ?? "") ?? .edit
+        gifFrameRate = (d.object(forKey: "gifFrameRate") as? Int).flatMap { GIFOptions.frameRates.contains($0) ? $0 : nil }
+            ?? GIFOptions.defaultFrameRate
+        gifMaxWidth = (d.object(forKey: "gifMaxWidth") as? Int).flatMap { GIFOptions.maxWidths.contains($0) ? $0 : nil }
+            ?? GIFOptions.defaultMaxWidth
         playSound = d.object(forKey: "playSound") as? Bool ?? true
         showMagnifier = d.object(forKey: "showMagnifier") as? Bool ?? true
         showPreview = d.object(forKey: "showPreview") as? Bool ?? true
