@@ -87,6 +87,23 @@ struct BeautifyTests {
     }
 }
 
+@Suite struct PreviewTextImageTests {
+    private func image(_ w: Int, _ h: Int) -> CGImage {
+        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
+        return ctx.makeImage()!
+    }
+
+    /// 识别文字 / 翻译 on the card read the capture without drawings, like ⌘T / ⌘D in the overlay.
+    @Test func readsTheImageWithoutDrawings() {
+        let annotated = image(40, 20), clean = image(40, 20)
+        #expect(PreviewModel(image: annotated, textImage: clean, scale: 2, status: "", savedURL: nil).textImage === clean)
+        // Nothing drawn (full screen, window, scrolling capture): the capture itself.
+        #expect(PreviewModel(image: annotated, scale: 2, status: "", savedURL: nil).textImage === annotated)
+    }
+}
+
 @Suite("Pin transforms")
 struct TransformTests {
     /// 2×1: red on the left, blue on the right.

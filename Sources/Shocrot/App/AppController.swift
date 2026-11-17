@@ -354,12 +354,14 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         switch outcome {
         case .copy:
             ImageOutput.copy(result.image, scale: result.scale)
-            CapturePreview.show(image: result.image, scale: result.scale, status: "已复制", savedURL: nil, on: screen)
+            CapturePreview.show(image: result.image, textImage: result.ocrImage, scale: result.scale, status: "已复制",
+                                savedURL: nil, on: screen)
         case .save:
             Task { @MainActor in
                 do {
                     let url = try await ImageOutput.saveInBackground(result.image, scale: result.scale)
-                    CapturePreview.show(image: result.image, scale: result.scale, status: "已保存", savedURL: url, on: screen)
+                    CapturePreview.show(image: result.image, textImage: result.ocrImage, scale: result.scale,
+                                        status: "已保存", savedURL: url, on: screen)
                 } catch {
                     Feedback.error(error)
                 }
@@ -367,7 +369,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         case .saveAs:
             ImageOutput.saveAs(result.image, scale: result.scale)
         case .pin:
-            PinWindow.pin(result.image, scale: result.scale, at: result.globalRect)
+            PinWindow.pin(result.image, textImage: result.ocrImage, scale: result.scale, at: result.globalRect)
         case .translate:
             translate(image: result.ocrImage, historyID: historyID,
                       near: CGPoint(x: result.globalRect.minX + 40, y: result.globalRect.minY))

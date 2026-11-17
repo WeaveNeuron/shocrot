@@ -9,8 +9,10 @@ enum CapturePreview {
     private static var hovering = false
     private static weak var model: PreviewModel?
 
-    static func show(image: CGImage, scale: CGFloat, status: String, savedURL: URL?, videoURL: URL? = nil,
-                     on screen: NSScreen?) {
+    /// `textImage`: what 识别文字 / 翻译 read — the capture without drawings on top of the text (mosaics stay),
+    /// as ⌘T / ⌘D in the overlay do. Nil when it would be the same as `image`.
+    static func show(image: CGImage, textImage: CGImage? = nil, scale: CGFloat, status: String, savedURL: URL?,
+                     videoURL: URL? = nil, on screen: NSScreen?) {
         // A recording always gets the card: it is the only way to reach the file and the GIF export.
         guard Settings.shared.showPreview || videoURL != nil else {
             Feedback.toast(status)
@@ -18,7 +20,7 @@ enum CapturePreview {
         }
         close(animated: false)
 
-        let model = PreviewModel(image: image, scale: scale, status: status, savedURL: savedURL)
+        let model = PreviewModel(image: image, textImage: textImage, scale: scale, status: status, savedURL: savedURL)
         model.videoURL = videoURL
         CapturePreview.model = model
         let host = NSHostingView(rootView: PreviewCard(model: model) { hovering in
@@ -78,6 +80,8 @@ enum CapturePreview {
 
 final class PreviewModel: ObservableObject {
     let original: CGImage
+    /// For OCR and translation: no drawings, mosaics kept; and never the beautified version.
+    let textImage: CGImage
     let scale: CGFloat
     @Published private(set) var image: CGImage
     @Published private(set) var thumbnail: NSImage
@@ -92,8 +96,9 @@ final class PreviewModel: ObservableObject {
     @Published private(set) var isSaving = false
     private var tempURL: URL?
 
-    init(image: CGImage, scale: CGFloat, status: String, savedURL: URL?) {
+    init(image: CGImage, textImage: CGImage? = nil, scale: CGFloat, status: String, savedURL: URL?) {
         original = image
+        self.textImage = textImage ?? image
         self.image = image
         self.scale = scale
         self.status = status
@@ -272,15 +277,15 @@ private struct PreviewCard: View {
                         .disabled(model.isSaving)
                     }
                     PreviewButton(symbol: "pin", help: "贴到屏幕") {
-                        PinWindow.pin(model.image, scale: model.scale)
+                        PinWindow.pin(model.image, textImage: model.textImage, scale: model.scale)
                         model.onClose()
                     }
                     PreviewButton(symbol: "text.viewfinder", help: "识别文字") {
-                        AppController.shared.recognize(image: model.image, scale: model.scale)
+                        AppController.shared.recognize(image: model.textImage, scale: model.scale)
                         model.onClose()
                     }
                     PreviewButton(symbol: "translate", help: "翻译") {
-                        AppController.shared.translate(image: model.image)
+                        AppController.shared.translate(image: model.textImage)
                         model.onClose()
                     }
                 }
