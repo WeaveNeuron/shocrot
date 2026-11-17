@@ -51,6 +51,8 @@ enum CapturePreview {
         }
         panel = p
         model.onClose = { close(animated: true) }
+        // After the long-GIF question the card gets its full time again: its file button is the suggested way on.
+        model.onAnswered = { scheduleDismiss(after: 15) }
         hovering = false
         // A recording's card is the way to its file and the GIF export, so it stays longer.
         scheduleDismiss(after: videoURL == nil ? 6 : 15)
@@ -93,6 +95,7 @@ final class PreviewModel: ObservableObject {
     private(set) var isAsking = false
     var videoURL: URL?
     var onClose: () -> Void = {}
+    var onAnswered: () -> Void = {}
     @Published private(set) var isSaving = false
     private var tempURL: URL?
 
@@ -143,6 +146,7 @@ final class PreviewModel: ObservableObject {
                 isAsking = true
                 let goOn = Self.confirmLongGIF()
                 isAsking = false
+                onAnswered()
                 guard goOn else { return }
             }
             isExporting = true
