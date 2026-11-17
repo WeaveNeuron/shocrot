@@ -143,10 +143,16 @@ enum ImageOutput {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
-    static var timestampName: String {
+    static var timestampName: String { timestampName(for: Date()) }
+
+    /// Gregorian digits whatever calendar or numbering the user picked, so names sort by date everywhere.
+    static func timestampName(for date: Date, timeZone: TimeZone = .current) -> String {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .gregorian)
+        f.timeZone = timeZone
         f.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-        return "Shocrot \(f.string(from: Date()))"
+        return "Shocrot \(f.string(from: date))"
     }
 
     /// A timestamped file name in `dir` that doesn't exist yet.

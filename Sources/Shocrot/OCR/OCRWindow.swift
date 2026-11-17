@@ -54,7 +54,13 @@ enum OCRWindow {
         window.center()
         if let last = windows.last { window.setFrameTopLeftPoint(CGPoint(x: last.frame.minX + 24, y: last.frame.maxY - 24)) }
         windows.append(window)
-        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in
+        // The observer goes with the window: left registered, its block would keep the window, the model
+        // and the whole capture alive after closing.
+        var observer: NSObjectProtocol?
+        observer = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window,
+                                                          queue: .main) { [weak window] _ in
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            observer = nil
             windows.removeAll { $0 === window }
             FocusReturn.windowDidGoAway()
         }

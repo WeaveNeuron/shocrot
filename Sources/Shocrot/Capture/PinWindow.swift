@@ -6,6 +6,8 @@ final class PinWindow: NSPanel {
     private static var open: [PinWindow] = []
 
     private var image: CGImage
+    /// What 识别文字 reads when it differs from `image`: no drawings over the text, mosaics kept.
+    private var textImage: CGImage?
     private let scale: CGFloat
     private var baseSize: CGSize
     private var zoom: CGFloat = 1
@@ -13,8 +15,8 @@ final class PinWindow: NSPanel {
     private var labelWork: DispatchWorkItem?
     private var actionBar: NSHostingView<PinActionBar>?
 
-    static func pin(_ image: CGImage, scale: CGFloat, at rect: CGRect? = nil) {
-        let pin = PinWindow(image: image, scale: scale, rect: rect)
+    static func pin(_ image: CGImage, textImage: CGImage? = nil, scale: CGFloat, at rect: CGRect? = nil) {
+        let pin = PinWindow(image: image, textImage: textImage === image ? nil : textImage, scale: scale, rect: rect)
         open.append(pin)
         pin.orderFrontRegardless()
         pin.makeKey()
@@ -23,8 +25,9 @@ final class PinWindow: NSPanel {
     static var hasOpen: Bool { !open.isEmpty }
     static func closeAll() { open.forEach { $0.close() } }
 
-    private init(image: CGImage, scale: CGFloat, rect: CGRect?) {
+    private init(image: CGImage, textImage: CGImage?, scale: CGFloat, rect: CGRect?) {
         self.image = image
+        self.textImage = textImage
         self.scale = scale
         baseSize = CGSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale)
         var frame = rect ?? CGRect(origin: .zero, size: baseSize)
@@ -128,7 +131,8 @@ final class PinWindow: NSPanel {
 
     override func scrollWheel(with event: NSEvent) {
         if event.modifierFlags.contains(.option) || event.modifierFlags.contains(.command) {
-            // ⌥/⌘ + scroll changes opacity.
+            // ⌥/⌘ + scroll changes opacity. Sideways scrolling (no vertical delta) leaves it alone.
+            guard event.scrollingDeltaY != 0 else { return }
             alphaValue = min(1, max(0.2, alphaValue + (event.scrollingDeltaY > 0 ? 0.05 : -0.05)))
             showLabel("\(Int(alphaValue * 100))% 不透明")
             return
@@ -203,7 +207,7 @@ final class PinWindow: NSPanel {
     }
 
     @objc private func saveImage() { ImageOutput.saveAs(image, scale: scale) }
-    @objc private func recognizeText() { AppController.shared.recognize(image: image, scale: scale) }
+    @objc private func recognizeText() { AppController.shared.recognize(image: textImage ?? image, scale: scale) }
     @objc private func resetZoom() { setZoom(1, anchor: nil) }
     @objc private func setOpacity(_ sender: NSMenuItem) { alphaValue = CGFloat(sender.tag) / 100 }
     @objc private func rotateRight() { apply(.rotateRight) }
@@ -215,6 +219,7 @@ final class PinWindow: NSPanel {
     private func apply(_ t: ImageOutput.Transform) {
         guard let next = ImageOutput.transformed(image, t) else { return }
         image = next
+        if let textImage { self.textImage = ImageOutput.transformed(textImage, t) }
         contentView?.layer?.contents = next
         baseSize = CGSize(width: CGFloat(next.width) / scale, height: CGFloat(next.height) / scale)
         let center = CGPoint(x: frame.midX, y: frame.midY)

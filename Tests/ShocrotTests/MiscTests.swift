@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import ServiceManagement
 import Testing
 @testable import Shocrot
 
@@ -86,6 +87,23 @@ struct BeautifyTests {
     }
 }
 
+@Suite struct PreviewTextImageTests {
+    private func image(_ w: Int, _ h: Int) -> CGImage {
+        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
+        return ctx.makeImage()!
+    }
+
+    /// 识别文字 / 翻译 on the card read the capture without drawings, like ⌘T / ⌘D in the overlay.
+    @Test func readsTheImageWithoutDrawings() {
+        let annotated = image(40, 20), clean = image(40, 20)
+        #expect(PreviewModel(image: annotated, textImage: clean, scale: 2, status: "", savedURL: nil).textImage === clean)
+        // Nothing drawn (full screen, window, scrolling capture): the capture itself.
+        #expect(PreviewModel(image: annotated, scale: 2, status: "", savedURL: nil).textImage === annotated)
+    }
+}
+
 @Suite("Pin transforms")
 struct TransformTests {
     /// 2×1: red on the left, blue on the right.
@@ -125,6 +143,22 @@ struct TransformTests {
         a.pixelScale = 2
         #expect(a.measurement == "100 px")
         #expect(Tool.allCases.filter { $0.shortcut == "u" } == [.ruler])
+    }
+}
+
+@Suite struct CounterNumberTests {
+    private func counter(_ n: Int) -> Annotation {
+        Annotation(tool: .counter, points: [.zero], color: .red, width: 4, number: n)
+    }
+
+    @Test func continuesAfterTheHighestNumber() {
+        #expect(Annotation.nextCounterNumber(in: []) == 1)
+        #expect(Annotation.nextCounterNumber(in: [counter(1), counter(2), counter(3)]) == 4)
+        // 2 was deleted: 1, 3 → the next is 4, not a second 3.
+        #expect(Annotation.nextCounterNumber(in: [counter(1), counter(3)]) == 4)
+        // Other tools don't count.
+        let text = Annotation(tool: .text, points: [.zero], color: .red, width: 4, text: "9", number: 9)
+        #expect(Annotation.nextCounterNumber(in: [text, counter(1)]) == 2)
     }
 }
 
@@ -533,5 +567,41 @@ struct TransformTests {
     @Test func trackpadStepsByDistanceAndNotTooFast() {
         let swipe = (0..<12).map { (CGFloat(5), Double($0) * 0.05) } // 60 pt over 0.55 s
         #expect(run(swipe, precise: true, phased: true) == [1, 1, 1, 1])
+    }
+}
+
+@Suite struct LaunchAtLoginTests {
+    @Test func pendingApprovalShowsAsOn() {
+        #expect(Settings.launchesAtLogin(.enabled))
+        #expect(Settings.launchesAtLogin(.requiresApproval))
+        #expect(!Settings.launchesAtLogin(.notRegistered))
+        #expect(!Settings.launchesAtLogin(.notFound))
+    }
+}
+
+@Suite struct TimestampNameTests {
+    @Test func usesGregorianDigitsAndTwentyFourHours() {
+        let date = Date(timeIntervalSince1970: 1_794_844_800) // 2026-11-16 16:00:00 UTC
+        #expect(ImageOutput.timestampName(for: date, timeZone: TimeZone(identifier: "UTC")!)
+                == "Shocrot 2026-11-16 at 16.00.00")
+    }
+}
+
+@Suite("LLM reasoning")
+struct ThinkingTests {
+    @Test func reasoningIsHidden() {
+        #expect(LLMTranslationService.stripThinking("<think>plan</think>\n\n你好") == "你好")
+        #expect(LLMTranslationService.stripThinking("\n<think>plan</think>你好") == "你好")
+        #expect(LLMTranslationService.stripThinking("\n<think>still thinking") == "")
+    }
+
+    @Test func aTagStillArrivingShowsNothing() {
+        for partial in ["", "\n", "<", "<th", "<think"] { #expect(LLMTranslationService.stripThinking(partial) == "") }
+    }
+
+    @Test func plainTranslationsAreLeftAlone() {
+        #expect(LLMTranslationService.stripThinking("你好") == "你好")
+        #expect(LLMTranslationService.stripThinking("<b>粗体</b>") == "<b>粗体</b>")
+        #expect(LLMTranslationService.stripThinking("think about it") == "think about it")
     }
 }

@@ -9,8 +9,10 @@ enum CapturePreview {
     private static var hovering = false
     private static weak var model: PreviewModel?
 
-    static func show(image: CGImage, scale: CGFloat, status: String, savedURL: URL?, videoURL: URL? = nil,
-                     on screen: NSScreen?) {
+    /// `textImage`: what 识别文字 / 翻译 read — the capture without drawings on top of the text (mosaics stay),
+    /// as ⌘T / ⌘D in the overlay do. Nil when it would be the same as `image`.
+    static func show(image: CGImage, textImage: CGImage? = nil, scale: CGFloat, status: String, savedURL: URL?,
+                     videoURL: URL? = nil, on screen: NSScreen?) {
         // A recording always gets the card: it is the only way to reach the file and the GIF export.
         guard Settings.shared.showPreview || videoURL != nil else {
             Feedback.toast(status)
@@ -18,7 +20,7 @@ enum CapturePreview {
         }
         close(animated: false)
 
-        let model = PreviewModel(image: image, scale: scale, status: status, savedURL: savedURL)
+        let model = PreviewModel(image: image, textImage: textImage, scale: scale, status: status, savedURL: savedURL)
         model.videoURL = videoURL
         CapturePreview.model = model
         let host = NSHostingView(rootView: PreviewCard(model: model) { hovering in
@@ -49,6 +51,8 @@ enum CapturePreview {
         }
         panel = p
         model.onClose = { close(animated: true) }
+        // After the long-GIF question the card gets its full time again: its file button is the suggested way on.
+        model.onAnswered = { scheduleDismiss(after: 15) }
         hovering = false
         // A recording's card is the way to its file and the GIF export, so it stays longer.
         scheduleDismiss(after: videoURL == nil ? 6 : 15)
@@ -57,7 +61,7 @@ enum CapturePreview {
     private static func scheduleDismiss(after seconds: Double) {
         dismissWork?.cancel()
         let work = DispatchWorkItem {
-            if model?.isExporting == true { scheduleDismiss(after: 3) } else if !hovering { close(animated: true) }
+            if model?.isExporting == true || model?.isAsking == true { scheduleDismiss(after: 3) } else if !hovering { close(animated: true) }
         }
         dismissWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
@@ -78,6 +82,8 @@ enum CapturePreview {
 
 final class PreviewModel: ObservableObject {
     let original: CGImage
+    /// For OCR and translation: no drawings, mosaics kept; and never the beautified version.
+    let textImage: CGImage
     let scale: CGFloat
     @Published private(set) var image: CGImage
     @Published private(set) var thumbnail: NSImage
@@ -85,13 +91,17 @@ final class PreviewModel: ObservableObject {
     @Published var status: String
     @Published var savedURL: URL?
     @Published var isExporting = false
+    /// The "this is long" question is up; the card must not go away underneath it.
+    private(set) var isAsking = false
     var videoURL: URL?
     var onClose: () -> Void = {}
+    var onAnswered: () -> Void = {}
     @Published private(set) var isSaving = false
     private var tempURL: URL?
 
-    init(image: CGImage, scale: CGFloat, status: String, savedURL: URL?) {
+    init(image: CGImage, textImage: CGImage? = nil, scale: CGFloat, status: String, savedURL: URL?) {
         original = image
+        self.textImage = textImage ?? image
         self.image = image
         self.scale = scale
         self.status = status
@@ -127,15 +137,25 @@ final class PreviewModel: ObservableObject {
         status = isBeautified ? "已美化并复制" : "已复制原图"
     }
 
-    /// Writes a GIF next to the recording, then puts it on the clipboard as a file.
+    /// Writes a GIF next to the recording, then puts it on the clipboard as a file. Frame rate and width come
+    /// from Settings; a long clip asks first, since its GIF gets very large.
     func exportGIF() {
-        guard let videoURL, !isExporting else { return }
-        isExporting = true
-        status = "正在生成 GIF…"
+        guard let videoURL, !isExporting, !isAsking else { return }
         Task { @MainActor in
+            if let duration = await GIFExport.duration(of: videoURL), GIFExport.isLong(duration) {
+                isAsking = true
+                let goOn = Self.confirmLongGIF()
+                isAsking = false
+                onAnswered()
+                guard goOn else { return }
+            }
+            isExporting = true
+            status = "正在生成 GIF…"
             defer { isExporting = false }
+            let s = Settings.shared
             do {
-                let gif = try await GIFExport.make(from: videoURL)
+                let gif = try await GIFExport.make(from: videoURL, fps: Double(s.gifFrameRate),
+                                                   maxWidth: s.gifMaxWidth == 0 ? nil : s.gifMaxWidth)
                 ImageOutput.copyFile(gif)
                 savedURL = gif
                 tempURL = nil
@@ -145,6 +165,21 @@ final class PreviewModel: ObservableObject {
                 Feedback.error(error)
             }
         }
+    }
+
+    /// A modal question needs Shocrot in front; focus goes back to where it was afterwards.
+    @MainActor
+    private static func confirmLongGIF() -> Bool {
+        let previous = NSApp.isActive ? nil : NSWorkspace.shared.frontmostApplication
+        NSApp.activate()
+        let alert = NSAlert()
+        alert.messageText = "这段比较长，GIF 会很大，建议直接发视频"
+        alert.informativeText = "超过 1 分钟的录屏转成 GIF 要等较长时间。"
+        alert.addButton(withTitle: "继续生成")
+        alert.addButton(withTitle: "取消")
+        let goOn = alert.runModal() == .alertFirstButtonReturn
+        if let previous, !previous.isTerminated { previous.activate() }
+        return goOn
     }
 
     /// A file for drag & drop: the saved file if any, otherwise a temporary PNG.
@@ -246,15 +281,15 @@ private struct PreviewCard: View {
                         .disabled(model.isSaving)
                     }
                     PreviewButton(symbol: "pin", help: "贴到屏幕") {
-                        PinWindow.pin(model.image, scale: model.scale)
+                        PinWindow.pin(model.image, textImage: model.textImage, scale: model.scale)
                         model.onClose()
                     }
                     PreviewButton(symbol: "text.viewfinder", help: "识别文字") {
-                        AppController.shared.recognize(image: model.image, scale: model.scale)
+                        AppController.shared.recognize(image: model.textImage, scale: model.scale)
                         model.onClose()
                     }
                     PreviewButton(symbol: "translate", help: "翻译") {
-                        AppController.shared.translate(image: model.image)
+                        AppController.shared.translate(image: model.textImage)
                         model.onClose()
                     }
                 }

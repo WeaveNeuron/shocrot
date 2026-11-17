@@ -5,8 +5,7 @@ let args = CommandLine.arguments
 if args.count >= 3, args[1] == "--ocr" {
     var status: Int32 = 0
     for path in args.dropFirst(2) {
-        guard let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
+        guard let (image, _) = ImageFile.load(URL(fileURLWithPath: path)) else {
             FileHandle.standardError.write("Cannot read image: \(path)\n".data(using: .utf8)!)
             status = 1
             continue

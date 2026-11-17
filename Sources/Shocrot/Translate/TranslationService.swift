@@ -222,9 +222,12 @@ struct LLMTranslationService: TranslationService {
         return (list ?? []).compactMap { $0["id"] as? String }.sorted()
     }
 
-    /// Reasoning models (e.g. DeepSeek-R1, Qwen3) may emit <think>…</think>; hide it.
-    private static func stripThinking(_ s: String) -> String {
-        guard s.hasPrefix("<think>") else { return s }
+    /// Reasoning models (e.g. DeepSeek-R1, Qwen3) may emit <think>…</think>; hide it. Some servers send a newline
+    /// before the tag, and while streaming the tag itself can arrive in pieces ("<th", "ink>").
+    static func stripThinking(_ s: String) -> String {
+        let start = s.drop(while: \.isWhitespace)
+        if start.isEmpty || "<think>".hasPrefix(start) { return "" }
+        guard start.hasPrefix("<think>") else { return s }
         guard let end = s.range(of: "</think>") else { return "" }
         return String(s[end.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
     }

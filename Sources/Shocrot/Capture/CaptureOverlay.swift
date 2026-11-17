@@ -143,6 +143,12 @@ final class CaptureSession {
         close()
     }
 
+    /// Full-screen capture with the annotation toolbar: the display under `point` starts out fully selected.
+    func selectScreen(containing point: NSPoint) {
+        guard let i = panels.firstIndex(where: { $0.frame.contains(point) }) ?? panels.indices.first else { return }
+        views[i].selectAll()
+    }
+
     func finish(_ outcome: CaptureOutcome, from view: OverlayView) {
         guard let result = view.makeResult() else { cancel(); return }
         close(restoringFocus: !outcome.opensFocusedWindow(ocrShowsWindow: Settings.shared.ocrShowWindow))
@@ -731,6 +737,10 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             session?.activate(self)
             self.selection = nil
             hideToolbar()
+            // A plain click picks what is under the pointer now, not the window hovered before the last selection.
+            snapDepth = 0
+            snapLevels = []
+            updateHover()
             phase = .creating(start: p, dragged: false)
             needsDisplay = true
         }
@@ -855,7 +865,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         case .text:
             beginText(at: p)
         case .counter:
-            let n = annotations.filter { $0.tool == .counter }.count + 1
+            let n = Annotation.nextCounterNumber(in: annotations)
             pushUndo()
             annotations.append(Annotation(tool: .counter, points: [p], color: state.color, width: state.width, number: n))
             needsDisplay = true
@@ -1013,7 +1023,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         needsDisplay = true
     }
 
-    private func selectAll() {
+    func selectAll() {
         guard annotations.isEmpty else { return }
         session?.activate(self)
         selection = bounds

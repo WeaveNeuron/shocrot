@@ -174,7 +174,8 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     @objc func showHistory() { HistoryWindow.show() }
     @objc func showSettings() { SettingsWindow.show() }
     @objc func showOnboarding() { OnboardingWindow.show() }
-    @objc private func openFolder() {
+    /// Created first: before the first save the folder doesn't exist, and opening it would silently do nothing.
+    @objc func openFolder() {
         try? FileManager.default.createDirectory(at: Settings.shared.saveDirectory, withIntermediateDirectories: true)
         NSWorkspace.shared.open(Settings.shared.saveDirectory)
     }
@@ -225,7 +226,8 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     /// A capture is being taken but its overlay isn't up yet; further requests are dropped.
     private var isPreparingCapture = false
 
-    func startCapture(_ mode: CaptureMode) {
+    /// `selectingScreen`: the display under the pointer starts out selected (full-screen capture that is to be annotated).
+    func startCapture(_ mode: CaptureMode, selectingScreen: Bool = false) {
         guard !isPreparingCapture, !CaptureSession.isActive, !ScrollCapture.isActive, !ScreenRecording.isActive else { return }
         guard ScreenCapturer.canCapture else { OnboardingWindow.show(); return }
         // Keep our own transient windows out of the frozen screen.
@@ -248,6 +250,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                     [weak self] outcome, result in self?.handle(outcome, result: result)
                 }
                 session?.onWindowCapture = { [weak self] id, screen in self?.captureWindow(id, on: screen) }
+                if selectingScreen { session?.selectScreen(containing: NSEvent.mouseLocation) }
             } catch {
                 Feedback.error(error)
             }
@@ -268,9 +271,12 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         }
     }
 
+    /// Follows the same “after selection” setting as an area capture: annotate, copy only, or save only.
     func captureFullScreen() {
         guard !isPreparingCapture, !CaptureSession.isActive, !ScrollCapture.isActive, !ScreenRecording.isActive else { return }
         guard ScreenCapturer.canCapture else { OnboardingWindow.show(); return }
+        let after = Settings.shared.afterCapture
+        if after == .edit { startCapture(.area, selectingScreen: true); return }
         TranslatePanel.dismissUnpinned()
         CapturePreview.close(animated: false)
         let mouse = NSEvent.mouseLocation
@@ -284,9 +290,13 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                 let scale = CGFloat(snap.image.width) / snap.screen.frame.width
                 Feedback.shutter()
                 HistoryStore.shared.add(snap.image, scale: scale)
-                ImageOutput.copy(snap.image, scale: scale)
-                let url = try await ImageOutput.saveInBackground(snap.image, scale: scale)
-                CapturePreview.show(image: snap.image, scale: scale, status: "已复制并保存", savedURL: url, on: snap.screen)
+                if after == .save {
+                    let url = try await ImageOutput.saveInBackground(snap.image, scale: scale)
+                    CapturePreview.show(image: snap.image, scale: scale, status: "已保存", savedURL: url, on: snap.screen)
+                } else {
+                    ImageOutput.copy(snap.image, scale: scale)
+                    CapturePreview.show(image: snap.image, scale: scale, status: "已复制", savedURL: nil, on: snap.screen)
+                }
             } catch {
                 isPreparingCapture = false
                 Feedback.error(error)
@@ -344,12 +354,14 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         switch outcome {
         case .copy:
             ImageOutput.copy(result.image, scale: result.scale)
-            CapturePreview.show(image: result.image, scale: result.scale, status: "已复制", savedURL: nil, on: screen)
+            CapturePreview.show(image: result.image, textImage: result.ocrImage, scale: result.scale, status: "已复制",
+                                savedURL: nil, on: screen)
         case .save:
             Task { @MainActor in
                 do {
                     let url = try await ImageOutput.saveInBackground(result.image, scale: result.scale)
-                    CapturePreview.show(image: result.image, scale: result.scale, status: "已保存", savedURL: url, on: screen)
+                    CapturePreview.show(image: result.image, textImage: result.ocrImage, scale: result.scale,
+                                        status: "已保存", savedURL: url, on: screen)
                 } catch {
                     Feedback.error(error)
                 }
@@ -357,7 +369,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         case .saveAs:
             ImageOutput.saveAs(result.image, scale: result.scale)
         case .pin:
-            PinWindow.pin(result.image, scale: result.scale, at: result.globalRect)
+            PinWindow.pin(result.image, textImage: result.ocrImage, scale: result.scale, at: result.globalRect)
         case .translate:
             translate(image: result.ocrImage, historyID: historyID,
                       near: CGPoint(x: result.globalRect.minX + 40, y: result.globalRect.minY))
@@ -379,13 +391,25 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         Task { @MainActor in
             let wasAutoCopy = Settings.shared.ocrAutoCopy
             await model.run()
+            let codes = model.result?.barcodes ?? []
             if let error = model.error {
                 Feedback.toast(error, symbol: "exclamationmark.triangle.fill")
+            } else if model.text.isEmpty, !codes.isEmpty {
+                // Without the result window the code's content would otherwise be lost.
+                ImageOutput.copyText(codes.joined(separator: "\n"))
+                Feedback.toast(codes.count == 1 ? "已复制二维码内容" : "已复制 \(codes.count) 个二维码的内容")
             } else if model.text.isEmpty {
                 Feedback.toast("没有识别到文字", symbol: "exclamationmark.triangle.fill")
             } else {
                 if !wasAutoCopy { ImageOutput.copyText(model.text) }
-                Feedback.toast("已复制 \(model.text.filter { !$0.isWhitespace }.count) 个字")
+                let count = "已复制 \(model.text.filter { !$0.isWhitespace }.count) 个字"
+                if codes.isEmpty {
+                    Feedback.toast(count)
+                } else {
+                    Feedback.offer(count + "，另有二维码", symbol: "qrcode", action: "复制二维码") {
+                        ImageOutput.copyText(codes.joined(separator: "\n"))
+                    }
+                }
             }
         }
     }
@@ -438,11 +462,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     private func loadImage(_ url: URL) -> (CGImage, CGFloat)? {
-        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
-        let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
-        let dpi = props?[kCGImagePropertyDPIWidth] as? CGFloat ?? 72
-        return (cg, max(1, round(dpi / 72)))
+        ImageFile.load(url)
     }
 
     @objc func recognizeClipboard() {

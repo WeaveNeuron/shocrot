@@ -110,35 +110,100 @@ struct VisionOCREngine: OCREngine {
     }
 
     static func recognizeSync(_ image: CGImage, languages: [String]) throws -> OCRResult {
-        let textRequest = VNRecognizeTextRequest()
-        textRequest.recognitionLevel = .accurate
-        textRequest.usesLanguageCorrection = true
-        textRequest.automaticallyDetectsLanguage = languages.isEmpty
-        if !languages.isEmpty {
-            let supported = (try? textRequest.supportedRecognitionLanguages()) ?? []
-            textRequest.recognitionLanguages = languages.filter { supported.contains($0) }
-        }
-        let barcodeRequest = VNDetectBarcodesRequest()
-
-        // Tiny selections recognize much better when upscaled.
-        let input = image.width < 600 || image.height < 120 ? (image.upscaled(by: 2) ?? image) : image
-        let handler = VNImageRequestHandler(cgImage: input, options: [:])
-        try handler.perform([textRequest, barcodeRequest])
-
-        let observations = textRequest.results ?? []
-        var lines: [OCRLine] = observations.compactMap { obs in
-            guard let candidate = obs.topCandidates(1).first else { return nil }
-            return OCRLine(text: candidate.string, confidence: candidate.confidence, box: obs.boundingBox)
-        }
-        // Reading order: top to bottom, then left to right within a row.
-        lines.sort { a, b in
-            if abs(a.box.midY - b.box.midY) < min(a.box.height, b.box.height) * 0.5 {
-                return a.box.minX < b.box.minX
+        let input = shouldUpscale(width: image.width, height: image.height) ? (image.upscaled(by: 2) ?? image) : image
+        var lines: [OCRLine] = []
+        var codes: [String] = []
+        for band in bands(height: input.height) {
+            guard let part = band.rows.count == input.height ? input
+                    : input.cropping(to: CGRect(x: 0, y: band.rows.lowerBound, width: input.width, height: band.rows.count))
+            else { continue }
+            let textRequest = VNRecognizeTextRequest()
+            textRequest.recognitionLevel = .accurate
+            textRequest.usesLanguageCorrection = true
+            textRequest.automaticallyDetectsLanguage = languages.isEmpty
+            if !languages.isEmpty {
+                let supported = (try? textRequest.supportedRecognitionLanguages()) ?? []
+                textRequest.recognitionLanguages = languages.filter { supported.contains($0) }
             }
-            return a.box.midY > b.box.midY
+            let barcodeRequest = VNDetectBarcodesRequest()
+            try VNImageRequestHandler(cgImage: part, options: [:]).perform([textRequest, barcodeRequest])
+
+            for obs in textRequest.results ?? [] {
+                guard let candidate = obs.topCandidates(1).first else { continue }
+                let box = place(obs.boundingBox, in: band.rows, imageHeight: input.height)
+                // Rows near a cut are seen by two bands; keep each line from the band that owns its middle.
+                let middle = min(max(Int(((1 - box.midY) * CGFloat(input.height)).rounded(.down)), 0), input.height - 1)
+                guard band.owns.contains(middle) else { continue }
+                lines.append(OCRLine(text: candidate.string, confidence: candidate.confidence, box: box))
+            }
+            codes += (barcodeRequest.results ?? []).compactMap(\.payloadStringValue)
         }
-        let codes = (barcodeRequest.results ?? []).compactMap(\.payloadStringValue)
-        return OCRResult(lines: lines, barcodes: Array(NSOrderedSet(array: codes)) as? [String] ?? codes)
+        return OCRResult(lines: readingOrder(lines), barcodes: Array(NSOrderedSet(array: codes)) as? [String] ?? codes)
+    }
+}
+
+extension VisionOCREngine {
+    struct Band: Equatable {
+        /// Pixel rows of the image this band covers, counted from the top.
+        let rows: Range<Int>
+        /// The rows whose lines this band reports; the bands' `owns` ranges tile the image without overlap.
+        let owns: Range<Int>
+    }
+
+    /// Vision reads an image at a reduced resolution, and past about 3,500 px of height most of the text is lost
+    /// (a 1600 x 6000 page gave 16 of 120 lines, a 1600 x 30000 scrolling capture none at all). Taller images are
+    /// read in bands of `bandHeight` rows that overlap by `bandOverlap`, so any line shorter than the overlap
+    /// lies whole in one band.
+    static let singlePassHeight = 3000, bandHeight = 2000, bandOverlap = 300
+
+    static func bands(height: Int) -> [Band] {
+        guard height > singlePassHeight else { return [Band(rows: 0 ..< height, owns: 0 ..< height)] }
+        var rows: [Range<Int>] = []
+        var start = 0
+        while true {
+            let end = min(start + bandHeight, height)
+            rows.append(start ..< end)
+            if end == height { break }
+            start += bandHeight - bandOverlap
+        }
+        return rows.indices.map { i in
+            let top = i == 0 ? 0 : rows[i].lowerBound + bandOverlap / 2
+            let bottom = i == rows.count - 1 ? height : rows[i + 1].lowerBound + bandOverlap / 2
+            return Band(rows: rows[i], owns: top ..< bottom)
+        }
+    }
+
+    /// Maps a normalized box (origin bottom-left) within the band `rows` to the same kind of box in the whole image.
+    static func place(_ box: CGRect, in rows: Range<Int>, imageHeight: Int) -> CGRect {
+        guard rows.count != imageHeight else { return box }
+        let band = CGFloat(rows.count), total = CGFloat(imageHeight)
+        let bottomFromTop = CGFloat(rows.lowerBound) + (1 - box.minY) * band
+        return CGRect(x: box.minX, y: 1 - bottomFromTop / total, width: box.width, height: box.height * band / total)
+    }
+
+    /// Tiny selections recognize much better at twice the size. A long strip that is narrow in only one direction
+    /// (a column of a web page, say) already has enough pixels; doubling it quadruples the work for nothing.
+    static func shouldUpscale(width: Int, height: Int) -> Bool {
+        (width < 600 || height < 120) && width * height <= 1_000_000
+    }
+
+    /// Top to bottom, then left to right within a row. Lines are grouped into rows first: "on the same row" isn't
+    /// transitive (A and B may share a row, B and C too, A and C not), so it can't serve as a sort comparator.
+    /// A row is measured against its top line, so a slightly slanted page doesn't chain rows together.
+    static func readingOrder(_ lines: [OCRLine]) -> [OCRLine] {
+        let byHeight = lines.sorted { a, b in
+            a.box.midY != b.box.midY ? a.box.midY > b.box.midY : a.box.minX < b.box.minX
+        }
+        var rows: [[OCRLine]] = []
+        for line in byHeight {
+            if let anchor = rows.last?.first,
+               abs(anchor.box.midY - line.box.midY) < min(anchor.box.height, line.box.height) * 0.5 {
+                rows[rows.count - 1].append(line)
+            } else {
+                rows.append([line])
+            }
+        }
+        return rows.flatMap { $0.sorted { $0.box.minX < $1.box.minX } }
     }
 }
 

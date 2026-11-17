@@ -68,6 +68,10 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
+extension Notification.Name {
+    static let hotKeyRecorderStarted = Notification.Name("ShocrotHotKeyRecorderStarted")
+}
+
 final class SettingsRouter: ObservableObject {
     static let shared = SettingsRouter()
     @Published var tab: SettingsTab = .general
@@ -164,6 +168,14 @@ private struct GeneralSettings: View {
                             .lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
                         Button("更改…", action: chooseFolder)
                     }
+                }
+            }
+            Section("录屏转 GIF") {
+                Picker("GIF 帧率", selection: $s.gifFrameRate) {
+                    ForEach(GIFOptions.frameRates, id: \.self) { Text("\($0) 帧/秒").tag($0) }
+                }
+                Picker("GIF 最大宽度", selection: $s.gifMaxWidth) {
+                    ForEach(GIFOptions.maxWidths, id: \.self) { Text(GIFOptions.widthTitle($0)).tag($0) }
                 }
             }
             Section("权限") {
@@ -264,11 +276,17 @@ struct HotKeyRecorder: View {
         }
         .buttonStyle(.bordered)
         .onDisappear(perform: stop)
+        // Only one recorder listens at a time; otherwise the first one would swallow the keys meant for this one.
+        .onReceive(NotificationCenter.default.publisher(for: .hotKeyRecorderStarted)) { note in
+            // The other recorder keeps the global shortcuts unregistered until it is done.
+            if note.object as? String != action.rawValue { stop(reregister: false) }
+        }
     }
 
     private func toggle() { recording ? stop() : start() }
 
     private func start() {
+        NotificationCenter.default.post(name: .hotKeyRecorderStarted, object: action.rawValue)
         recording = true
         HotKeyCenter.shared.unregisterAll() // so the current combos reach us
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
@@ -289,12 +307,14 @@ struct HotKeyRecorder: View {
         }
     }
 
-    private func stop() {
+    private func stop() { stop(reregister: true) }
+
+    private func stop(reregister: Bool) {
         guard recording || monitor != nil else { return }
         recording = false
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
-        AppController.shared.registerHotKeys()
+        if reregister { AppController.shared.registerHotKeys() }
     }
 }
 
@@ -401,6 +421,9 @@ private struct TranslateSettings: View {
                     TextField("接口地址", text: $s.llm.baseURL, prompt: Text("https://…/v1"))
                     SecureField("API Key", text: $apiKey, prompt: Text("本地模型可留空"))
                         .onChange(of: apiKey) { _, key in
+                            // Editing the address reloads the field with that server's key; nothing to store then,
+                            // and a half-typed address (no key, nowhere to put one) is not a failure.
+                            guard key != (Keychain.llmAPIKey(for: s.llm.baseURL) ?? "") else { return }
                             if !Keychain.setLLMAPIKey(key, for: s.llm.baseURL) {
                                 Feedback.toast("API Key 未能保存，请检查接口地址和钥匙串权限", symbol: "exclamationmark.triangle.fill")
                             }

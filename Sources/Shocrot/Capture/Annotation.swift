@@ -75,6 +75,11 @@ struct Annotation {
         return points.dropFirst().reduce(CGRect(origin: first, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
     }
 
+    /// The next step marker continues after the highest one, so deleting one in the middle never repeats a number.
+    static func nextCounterNumber(in list: [Annotation]) -> Int {
+        (list.lazy.filter { $0.tool == .counter }.map(\.number).max() ?? 0) + 1
+    }
+
     static func font(for width: CGFloat) -> NSFont {
         .systemFont(ofSize: 10 + width * 3, weight: .semibold)
     }
