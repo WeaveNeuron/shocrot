@@ -143,6 +143,12 @@ final class CaptureSession {
         close()
     }
 
+    /// Full-screen capture with the annotation toolbar: the display under `point` starts out fully selected.
+    func selectScreen(containing point: NSPoint) {
+        guard let i = panels.firstIndex(where: { $0.frame.contains(point) }) ?? panels.indices.first else { return }
+        views[i].selectAll()
+    }
+
     func finish(_ outcome: CaptureOutcome, from view: OverlayView) {
         guard let result = view.makeResult() else { cancel(); return }
         close(restoringFocus: !outcome.opensFocusedWindow(ocrShowsWindow: Settings.shared.ocrShowWindow))
@@ -1017,7 +1023,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         needsDisplay = true
     }
 
-    private func selectAll() {
+    func selectAll() {
         guard annotations.isEmpty else { return }
         session?.activate(self)
         selection = bounds

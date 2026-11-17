@@ -226,7 +226,8 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     /// A capture is being taken but its overlay isn't up yet; further requests are dropped.
     private var isPreparingCapture = false
 
-    func startCapture(_ mode: CaptureMode) {
+    /// `selectingScreen`: the display under the pointer starts out selected (full-screen capture that is to be annotated).
+    func startCapture(_ mode: CaptureMode, selectingScreen: Bool = false) {
         guard !isPreparingCapture, !CaptureSession.isActive, !ScrollCapture.isActive, !ScreenRecording.isActive else { return }
         guard ScreenCapturer.canCapture else { OnboardingWindow.show(); return }
         // Keep our own transient windows out of the frozen screen.
@@ -249,6 +250,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                     [weak self] outcome, result in self?.handle(outcome, result: result)
                 }
                 session?.onWindowCapture = { [weak self] id, screen in self?.captureWindow(id, on: screen) }
+                if selectingScreen { session?.selectScreen(containing: NSEvent.mouseLocation) }
             } catch {
                 Feedback.error(error)
             }
@@ -269,9 +271,12 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         }
     }
 
+    /// Follows the same “after selection” setting as an area capture: annotate, copy only, or save only.
     func captureFullScreen() {
         guard !isPreparingCapture, !CaptureSession.isActive, !ScrollCapture.isActive, !ScreenRecording.isActive else { return }
         guard ScreenCapturer.canCapture else { OnboardingWindow.show(); return }
+        let after = Settings.shared.afterCapture
+        if after == .edit { startCapture(.area, selectingScreen: true); return }
         TranslatePanel.dismissUnpinned()
         CapturePreview.close(animated: false)
         let mouse = NSEvent.mouseLocation
@@ -285,9 +290,13 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                 let scale = CGFloat(snap.image.width) / snap.screen.frame.width
                 Feedback.shutter()
                 HistoryStore.shared.add(snap.image, scale: scale)
-                ImageOutput.copy(snap.image, scale: scale)
-                let url = try await ImageOutput.saveInBackground(snap.image, scale: scale)
-                CapturePreview.show(image: snap.image, scale: scale, status: "已复制并保存", savedURL: url, on: snap.screen)
+                if after == .save {
+                    let url = try await ImageOutput.saveInBackground(snap.image, scale: scale)
+                    CapturePreview.show(image: snap.image, scale: scale, status: "已保存", savedURL: url, on: snap.screen)
+                } else {
+                    ImageOutput.copy(snap.image, scale: scale)
+                    CapturePreview.show(image: snap.image, scale: scale, status: "已复制", savedURL: nil, on: snap.screen)
+                }
             } catch {
                 isPreparingCapture = false
                 Feedback.error(error)
