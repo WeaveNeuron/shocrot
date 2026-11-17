@@ -865,7 +865,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         case .text:
             beginText(at: p)
         case .counter:
-            let n = annotations.filter { $0.tool == .counter }.count + 1
+            let n = Annotation.nextCounterNumber(in: annotations)
             pushUndo()
             annotations.append(Annotation(tool: .counter, points: [p], color: state.color, width: state.width, number: n))
             needsDisplay = true

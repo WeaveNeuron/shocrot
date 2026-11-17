@@ -129,6 +129,22 @@ struct TransformTests {
     }
 }
 
+@Suite struct CounterNumberTests {
+    private func counter(_ n: Int) -> Annotation {
+        Annotation(tool: .counter, points: [.zero], color: .red, width: 4, number: n)
+    }
+
+    @Test func continuesAfterTheHighestNumber() {
+        #expect(Annotation.nextCounterNumber(in: []) == 1)
+        #expect(Annotation.nextCounterNumber(in: [counter(1), counter(2), counter(3)]) == 4)
+        // 2 was deleted: 1, 3 → the next is 4, not a second 3.
+        #expect(Annotation.nextCounterNumber(in: [counter(1), counter(3)]) == 4)
+        // Other tools don't count.
+        let text = Annotation(tool: .text, points: [.zero], color: .red, width: 4, text: "9", number: 9)
+        #expect(Annotation.nextCounterNumber(in: [text, counter(1)]) == 2)
+    }
+}
+
 @Suite struct AnnotationHistoryTests {
     private func arrow(_ x: CGFloat) -> Annotation {
         Annotation(tool: .arrow, points: [CGPoint(x: x, y: 0), CGPoint(x: x + 10, y: 0)], color: .red, width: 2)
