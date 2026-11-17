@@ -61,4 +61,16 @@ struct ImageFileTests {
         defer { try? FileManager.default.removeItem(at: url) }
         #expect(ImageFile.load(url)?.1 == 2)
     }
+
+    @Test func dpiScaleStaysBetweenOneAndThree() throws {
+        let url = try photo(orientation: 1, dpi: 300)
+        defer { try? FileManager.default.removeItem(at: url) }
+        #expect(ImageFile.load(url)?.1 == 3)
+        #expect(ImageFile.scale(forDPI: 72) == 1)
+        #expect(ImageFile.scale(forDPI: 36) == 1)
+        #expect(ImageFile.scale(forDPI: 216) == 3)
+        #expect(ImageFile.scale(forDPI: 600) == 3)
+        #expect(ImageFile.scale(forDPI: 0) == 1)
+        #expect(ImageFile.scale(forDPI: .nan) == 1)
+    }
 }
