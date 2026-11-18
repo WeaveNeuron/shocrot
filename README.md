@@ -1,5 +1,7 @@
 # Shocrot
 
+A simple macOS menu bar app for screenshots, OCR, and translation. Written in pure Swift (AppKit + SwiftUI) with no third-party dependencies. OCR uses the system Vision framework and works fully offline.
+
 简约的 macOS 截图 + OCR + 翻译菜单栏工具。纯 Swift（AppKit + SwiftUI），无第三方依赖；OCR 使用系统内置 Vision，完全离线。
 
 ## 功能
@@ -61,3 +63,9 @@ scripts/build_app.sh --install  # 同时安装到 /Applications
 调试：`SHOCROT_DEMO_IMAGE=<png> .build/debug/Shocrot` 会用该图片模拟屏幕并自动进入截图（仅 Debug 构建），无需录屏权限即可调试覆盖层。
 
 本机 `swift build` / `swift test` 时，SwiftPM 会往用户的 TemporaryItems 写 `output-file-map.json`。沙箱若拒绝这次写入（EPERM），报错看起来像普通 I/O 错误，测试还没启动就停了。源码没有这个缺陷；放开 TemporaryItems 的写入后再跑即可。
+
+## License
+
+Copyright 2026 WeaveNeuron LTD.
+
+Licensed under the [Apache License, Version 2.0](LICENSE).
