@@ -1,0 +1,376 @@
+/* Shocrot — English (development language). Keys are grouped by where the text appears.
+   Keep zh-Hans.lproj/Localizable.strings in step: same keys, same format specifiers. */
+
+/* MARK: Common */
+"common.cancel" = "Cancel";
+"common.close" = "Close";
+"common.closeEsc" = "Close (Esc)";
+"common.copy" = "Copy";
+"common.copied" = "Copied";
+"common.copyImage" = "Copy Image";
+"common.imageCopied" = "Image copied";
+"common.delete" = "Delete";
+"common.done" = "Done";
+"common.noTextFound" = "No text found";
+"common.pin" = "Pin";
+"common.pinToScreen" = "Pin to Screen";
+"common.preparing" = "Starting…";
+"common.qrCopied" = "QR code content copied";
+"common.recognizeText" = "Recognize Text";
+"common.restart" = "Restart";
+"common.save" = "Save";
+"common.saveAs" = "Save As…";
+"common.saved" = "Saved";
+"common.showInFinder" = "Show in Finder";
+"common.translate" = "Translate";
+"common.turnOn" = "Turn On";
+
+/* MARK: Menu bar item and app menu */
+"status.tooltip.attention" = "Shocrot: Screen Recording permission needed";
+"status.icon.attention" = "Shocrot, Screen Recording permission needed";
+"menu.relaunch" = "Restart Shocrot";
+"menu.relaunch.subtitle" = "Screen Recording is on and takes effect after a restart";
+"menu.grantScreenRecording" = "Turn On Screen Recording…";
+"menu.grantScreenRecording.subtitle" = "Needed for screenshots, text recognition and translation";
+"menu.delayedCapture" = "Capture Area in 3 Seconds";
+"menu.needsAccessibility" = "Requires Accessibility permission";
+"menu.recognizeClipboard" = "Recognize Text in Clipboard Image";
+"menu.recognizeFile" = "Recognize Text in Image File…";
+"menu.history" = "History…";
+"menu.openFolder" = "Open Screenshots Folder";
+"menu.closeAllPins" = "Close All Pins";
+"menu.settings" = "Settings…";
+"menu.quit" = "Quit Shocrot";
+"menu.about" = "About Shocrot";
+"menu.edit" = "Edit";
+"menu.undo" = "Undo";
+"menu.redo" = "Redo";
+"menu.cut" = "Cut";
+"menu.copy" = "Copy";
+"menu.paste" = "Paste";
+"menu.selectAll" = "Select All";
+"menu.window" = "Window";
+"menu.minimize" = "Minimize";
+
+/* MARK: Global shortcut actions */
+"action.captureArea" = "Capture Area";
+"action.captureOCR" = "Recognize Text (OCR)";
+"action.captureScreen" = "Capture Full Screen";
+"action.pinClipboard" = "Pin Clipboard";
+"action.translateSelection" = "Translate Selection";
+"action.translateCapture" = "Translate Screenshot";
+"action.translateInput" = "Type to Translate";
+
+/* MARK: Toasts */
+"toast.countdown" = "Capturing in %ld s";
+"toast.qrCodesCopied" = "Copied the content of %ld QR codes";
+"toast.charsCopied.one" = "Copied 1 character";
+"toast.charsCopied.other" = "Copied %ld characters";
+"toast.alsoQRCode" = "%@, plus a QR code";
+"toast.copyQRCode" = "Copy QR Code";
+"toast.selectionNeedsAccessibility" = "Translating selected text requires Accessibility permission";
+"toast.noImageInClipboard" = "No image in the clipboard";
+"toast.noImageOrTextInClipboard" = "No image or text in the clipboard";
+"toast.loginItemApproval" = "Allow Shocrot under Login Items in System Settings";
+"toast.loginItemFailed" = "Couldn’t change Open at Login: %@";
+"toast.savedTo" = "Saved to %@";
+"toast.shortcutInUse" = "%1$@ is already used for “%2$@”";
+
+/* MARK: Capture preview card */
+"preview.windowSaved" = "Window saved";
+"preview.windowCopied" = "Window copied";
+"preview.scrollCopied" = "Scrolling capture copied";
+"preview.recordingSaved" = "Recording saved · %@";
+"preview.beautifiedCopied" = "Beautified and copied";
+"preview.originalCopied" = "Original copied";
+"preview.makingGIF" = "Creating GIF…";
+"preview.gifCopied" = "GIF created and copied";
+"preview.gifFailed" = "Couldn’t create the GIF";
+"preview.longGIF.title" = "This clip is long, so the GIF will be large. Consider sending the video instead.";
+"preview.longGIF.message" = "Turning a recording longer than 1 minute into a GIF takes a while.";
+"preview.longGIF.continue" = "Create Anyway";
+"preview.dragHint" = "Drag into another app, or double-click to open in Preview";
+"preview.copyFile" = "Copy File";
+"preview.fileCopied" = "File copied";
+"preview.makeGIF" = "Convert to GIF";
+"preview.play" = "Play";
+"preview.restoreOriginal" = "Restore Original";
+"preview.beautify" = "Beautify: add a background and shadow";
+
+/* MARK: Capture toolbar and annotation tools */
+"toolbar.undo" = "Undo (⌘Z)";
+"toolbar.redo" = "Redo (⇧⌘Z)";
+"toolbar.ocr" = "Recognize Text (⌘T)";
+"toolbar.translate" = "Translate (⌘D)";
+"toolbar.pin" = "Pin to Screen (⌘P)";
+"toolbar.scroll" = "Scrolling Capture (⌘L)";
+"toolbar.record" = "Record Screen (⌘R)";
+"toolbar.save" = "Save (⌘S), Save As (⇧⌘S)";
+"toolbar.cancel" = "Cancel (Esc)";
+"toolbar.copyDone" = "Copy and Finish (↩ / ⌘C / double-click)";
+"toolbar.width.thin" = "Thin";
+"toolbar.width.medium" = "Medium";
+"toolbar.width.thick" = "Thick";
+"tool.rect" = "Rectangle (R)";
+"tool.ellipse" = "Ellipse (O)";
+"tool.arrow" = "Arrow (A)";
+"tool.pen" = "Pen (P)";
+"tool.highlighter" = "Highlighter (H)";
+"tool.mosaic" = "Mosaic (M)";
+"tool.text" = "Text (T)";
+"tool.counter" = "Step Number (N)";
+"tool.ruler" = "Measure (U)";
+
+/* MARK: Capture overlay */
+"overlay.accessibilityOffer" = "Turn on Accessibility to select controls inside windows with the scroll wheel while capturing";
+"overlay.wheelHint" = "Selecting controls with the scroll wheel needs Accessibility. You can turn it on after this capture.";
+"overlay.optionClickHint" = "⌥-click to capture the window alone";
+"overlay.textPlaceholder" = "Enter text";
+"overlay.colorCopied" = "Copied color %@";
+
+/* MARK: Capture errors */
+"error.windowGone" = "This window has closed or is hidden, so it can’t be captured on its own.";
+"error.permissionDenied" = "Shocrot needs Screen Recording permission to take screenshots.";
+"error.noDisplay" = "No display found to capture.";
+
+/* MARK: Pinned images */
+"pin.opacityLabel" = "%ld%% opacity";
+"pin.menu.save" = "Save…";
+"pin.menu.actualSize" = "Actual Size";
+"pin.menu.opacity" = "Opacity";
+"pin.menu.rotateRight" = "Rotate Right";
+"pin.menu.rotateLeft" = "Rotate Left";
+"pin.menu.flipHorizontal" = "Flip Horizontal";
+"pin.menu.flipVertical" = "Flip Vertical";
+"pin.bar.copy" = "Copy (⌘C)";
+"pin.bar.save" = "Save (⌘S)";
+
+/* MARK: Screen recording */
+"recording.stopShortcutTaken" = "⌃⌘⎋ is already in use. Click “Stop” to end the recording.";
+"recording.interrupted" = "The system interrupted the recording. Everything recorded so far was saved.";
+"recording.saveFailed" = "The recording couldn’t be saved properly. The file was kept: %@";
+"recording.cancelHelp" = "Cancel and discard the recording";
+"recording.stop" = "Stop";
+"recording.stopAndSave" = "Stop and Save";
+
+/* MARK: Scrolling capture */
+"scroll.tooFast" = "Slow down, or scroll down";
+"scroll.scrollDown" = "Scroll down the page";
+"scroll.stitched" = "Stitched %ld pt";
+"scroll.doneHelp" = "Done (↩)";
+
+/* MARK: Permissions */
+"permission.screenRecording" = "Screen Recording";
+"permission.accessibility" = "Accessibility";
+"permission.screenRecording.detail" = "Screenshots, text recognition and screenshot translation";
+"permission.accessibility.detail" = "Selection translation and picking controls while capturing (optional)";
+"permission.onAfterRestart" = "On. Takes effect after a restart";
+"permission.granted" = "On";
+"permission.grant" = "Turn On";
+"guide.title" = "Turn On “%@”";
+"guide.verify" = "Confirm in the system dialog, then make sure the switch is on";
+"guide.drag" = "Drag into the list above, or turn on its switch";
+"guide.close" = "Close Guide";
+
+/* MARK: Onboarding */
+"onboarding.welcome" = "Welcome to Shocrot";
+"onboarding.tagline" = "One key to capture, record, annotate, pin, recognize text and translate.";
+"onboarding.shortcuts" = "Shortcuts";
+"onboarding.permissions" = "Permissions";
+"onboarding.privacy" = "Everything stays on this Mac by default. Online translation is opt-in.";
+"onboarding.start" = "Get Started";
+"onboarding.later" = "Later";
+
+/* MARK: Settings */
+"settings.windowTitle" = "Shocrot Settings";
+"settings.tab.general" = "General";
+"settings.tab.shortcuts" = "Shortcuts";
+"settings.tab.ocr" = "Text Recognition";
+"settings.tab.translate" = "Translation";
+"settings.tab.about" = "About";
+"settings.tab.general.subtitle" = "Capture behavior, save location and system permissions";
+"settings.tab.shortcuts.subtitle" = "Global shortcuts that work in any app";
+"settings.tab.ocr.subtitle" = "Recognition languages and result format";
+"settings.tab.translate.subtitle" = "Translation services, languages and LLM setup";
+"settings.tab.about.subtitle" = "Version information";
+
+"settings.general.launchAtLogin" = "Open at login";
+"settings.general.playSound" = "Play shutter sound";
+"settings.general.showMagnifier" = "Show magnifier and color picker while selecting";
+"settings.general.showPreview" = "Show a preview in the corner after capturing";
+"settings.general.keepHistory" = "Keep history";
+"settings.general.screenshots" = "Screenshots";
+"settings.general.afterCapture" = "After selecting";
+"afterCapture.edit" = "Show annotation toolbar";
+"afterCapture.copy" = "Copy to clipboard";
+"afterCapture.save" = "Save to folder";
+"settings.general.imageFormat" = "Image format";
+"settings.general.png" = "PNG (lossless)";
+"settings.general.jpeg" = "JPEG (smaller)";
+"settings.general.saveLocation" = "Save location";
+"settings.general.change" = "Change…";
+"settings.general.choose" = "Choose";
+"settings.general.gif" = "Recording to GIF";
+"settings.general.gifFrameRate" = "GIF frame rate";
+"settings.general.gifMaxWidth" = "GIF maximum width";
+"gif.fps" = "%ld fps";
+"gif.originalSize" = "Original size";
+"gif.widthPixels" = "%ld px";
+"settings.general.permissions" = "Permissions";
+"settings.general.clearHistory.title" = "Delete the existing history?";
+"settings.general.clearHistory.delete.one" = "Delete 1 Item";
+"settings.general.clearHistory.delete.other" = "Delete %ld Items";
+"settings.general.clearHistory.keep" = "Keep";
+"settings.general.clearHistory.message" = "New captures won’t be kept from now on. Existing captures and recognized text stay on this Mac, and screenshots saved to your folder aren’t affected.";
+
+"settings.language" = "Language";
+"settings.language.picker" = "App language";
+"settings.language.system" = "System Default";
+"settings.language.footer" = "Takes effect after Shocrot restarts.";
+"settings.language.restartNow" = "Restart Now";
+
+"settings.shortcuts.taken" = "This shortcut is already used by the system or another app";
+"settings.shortcuts.footer" = "Click, then press a new key combination. Press ⌫ to clear or Esc to cancel.";
+"settings.shortcuts.inCapture" = "While Capturing";
+"settings.shortcuts.selectWindow" = "Select a window / capture it alone";
+"settings.shortcuts.selectWindow.keys" = "Click  ⌥-click";
+"settings.shortcuts.selectControl" = "Select a control inside a window";
+"settings.shortcuts.selectControl.keys" = "Scroll wheel (needs Accessibility)";
+"settings.shortcuts.copyDone" = "Copy and finish";
+"settings.shortcuts.copyDone.keys" = "↩  ⌘C  Double-click";
+"settings.shortcuts.save" = "Save / Save As";
+"settings.shortcuts.ocrTranslatePin" = "Recognize text / Translate / Pin";
+"settings.shortcuts.scrollRecord" = "Scrolling capture / Record screen";
+"settings.shortcuts.stopRecording" = "Stop and save a recording";
+"settings.shortcuts.tools" = "Annotation tools";
+"settings.shortcuts.undoRedo" = "Undo / Redo";
+"settings.shortcuts.nudge" = "Nudge the selection";
+"settings.shortcuts.nudge.keys" = "Arrow keys (⇧ for 10×)";
+"settings.shortcuts.colorFullScreen" = "Copy color / Select full screen";
+"settings.shortcuts.cancel" = "Cancel";
+"settings.shortcuts.cancel.keys" = "Esc  Right-click";
+"settings.shortcuts.restoreDefaults" = "Restore Default Shortcuts";
+"settings.shortcuts.recording" = "Press a shortcut…";
+"settings.shortcuts.notSet" = "Not set";
+
+"settings.ocr.autoCopy" = "Copy text after recognizing";
+"settings.ocr.showWindow" = "Show the result window after recognizing";
+"settings.ocr.keepLineBreaks" = "Keep original line breaks by default";
+"settings.ocr.languages" = "Recognition Languages";
+"settings.ocr.footer" = "Uses the Vision engine built into macOS and works fully offline. With nothing selected the language is detected automatically (recommended); choose languages only if recognition is inaccurate.";
+
+"settings.about.tagline" = "Capture · Annotate · Pin · Recognize Text · Translate";
+"settings.about.version" = "Version %@";
+
+"settings.translate.primary" = "Primary language";
+"settings.translate.secondary" = "Secondary language";
+"settings.translate.languagesFooter" = "Text in the primary language is translated into the secondary language; everything else is translated into the primary language.";
+"settings.translate.enableApple" = "Enable Apple Translate (offline, free)";
+"settings.translate.manageLanguages" = "Manage Offline Languages…";
+"settings.translate.enableGoogle" = "Enable Google Translate (free, no setup)";
+"settings.translate.online" = "Online Translation";
+"settings.translate.googleFooter" = "Requires an internet connection. The text to translate is sent to Google.";
+"settings.translate.enableLLM" = "Enable LLM translation";
+"settings.translate.preset" = "Preset";
+"settings.translate.custom" = "Custom";
+"settings.translate.endpoint" = "API endpoint";
+"settings.translate.apiKeyPrompt" = "Optional for local models";
+"settings.translate.apiKeyNotSaved" = "Couldn’t save the API key. Check the endpoint and Keychain access.";
+"settings.translate.model" = "Model";
+"settings.translate.pickModel" = "Choose from installed models";
+"settings.translate.disableThinking" = "Disable thinking (faster with reasoning models)";
+"settings.translate.test" = "Test Connection";
+"settings.translate.compatible" = "Works with any OpenAI-compatible API";
+"settings.translate.llm" = "Large Language Model";
+"settings.translate.llmFooter" = "Local models (Ollama / LM Studio) never leave this Mac; cloud services receive the text to translate. The API key is stored in the Keychain.";
+"settings.translate.testing" = "Testing…";
+"settings.translate.connected" = "✓ Connected: %@";
+
+/* MARK: History */
+"history.title" = "History";
+"history.count.one" = "1 item";
+"history.count.other" = "%ld items";
+"history.search" = "Search recognized text";
+"history.openFolder" = "Open screenshots folder";
+"history.clear" = "Clear history";
+"history.empty" = "No screenshots yet. Press %@ to take one.";
+"history.emptyShortcut" = "the capture shortcut";
+"history.noMatches" = "No matching items";
+"history.clearConfirm" = "Clear all history?";
+"history.clearButton" = "Clear";
+"history.clearMessage" = "Screenshots saved to your folder aren’t affected.";
+"history.copyText" = "Copy Text";
+
+/* MARK: Text recognition window */
+"ocr.result" = "Recognized Text";
+"ocr.keepLineBreaks" = "Keep Line Breaks";
+"ocr.joinParagraphs" = "Join into Paragraphs";
+"ocr.copiedLine" = "Copied: %@";
+"ocr.clickToCopyLine" = "Click to copy this line";
+"ocr.codes" = "QR Codes / Barcodes";
+"ocr.search" = "Search";
+"ocr.recognizing" = "Recognizing…";
+"ocr.lines.one" = "1 line";
+"ocr.lines.other" = "%ld lines";
+"ocr.characters.one" = "1 character";
+"ocr.characters.other" = "%ld characters";
+
+/* MARK: Translation panel */
+"translate.pin" = "Pin window (stays open when it loses focus)";
+"translate.unpin" = "Unpin";
+"translate.settings" = "Translation Settings";
+"translate.copiedTranslation" = "Translation copied";
+"translate.recognizing" = "Recognizing text…";
+"translate.placeholder" = "Type text: ↩ to translate, ⇧↩ for a new line, ⇧⌘C to copy the translation";
+"translate.detected" = "Detected %@";
+"translate.speak" = "Read Aloud";
+"translate.copySource" = "Copy Original";
+"translate.clear" = "Clear";
+"translate.autoDetect" = "Detect Language";
+"translate.auto" = "Automatic";
+"translate.swap" = "Swap Languages";
+"translate.noServices" = "No translation service is enabled yet";
+"translate.openSettings" = "Open Settings";
+"translate.copyTranslation" = "Copy Translation";
+"translate.download" = "Download";
+"translate.settingsButton" = "Settings";
+"translate.dictionary" = "Dictionary";
+"translate.collapse" = "Collapse";
+"translate.expand" = "Expand";
+"translate.openInDictionary" = "Open in Dictionary";
+
+/* MARK: Translation services */
+"service.apple" = "Apple Translate";
+"service.google" = "Google Translate";
+"service.llm.defaultName" = "LLM";
+"service.llm.preset.ollama" = "Ollama (local)";
+"service.llm.preset.lmStudio" = "LM Studio (local)";
+"error.appleUnsupported" = "Apple Translate doesn’t support %1$@ → %2$@ yet";
+"error.appleNeedsDownload" = "Download the offline languages for %1$@ and %2$@ first";
+"error.googleUnavailable" = "Google Translate is unavailable right now. Check your internet connection.";
+"error.invalidEndpoint" = "Invalid API endpoint";
+"error.httpStatus" = "The server returned %1$ld: %2$@";
+"error.noTranslation" = "The model returned no translation. Try turning on “Disable thinking” or use another model.";
+"error.requestFailed" = "Request failed";
+
+/* MARK: Translation languages */
+"language.zh-Hans" = "Chinese (Simplified)";
+"language.zh-Hant" = "Chinese (Traditional)";
+"language.en" = "English";
+"language.ja" = "Japanese";
+"language.ko" = "Korean";
+"language.fr" = "French";
+"language.de" = "German";
+"language.es" = "Spanish";
+"language.it" = "Italian";
+"language.pt" = "Portuguese";
+"language.ru" = "Russian";
+"language.ar" = "Arabic";
+"language.th" = "Thai";
+"language.vi" = "Vietnamese";
+"language.id" = "Indonesian";
+"language.tr" = "Turkish";
+"language.pl" = "Polish";
+"language.nl" = "Dutch";
+"language.uk" = "Ukrainian";
+"language.hi" = "Hindi";

@@ -1,0 +1,4 @@
+/* 本地化的 Info.plist 值（简体中文）。 */
+"CFBundleDisplayName" = "Shocrot";
+"NSScreenCaptureUsageDescription" = "Shocrot 需要截取屏幕内容来完成截图和文字识别。";
+"NSHumanReadableCopyright" = "© 2026 WeaveNeuron";

@@ -1,0 +1,4 @@
+/* Localized Info.plist values (English). */
+"CFBundleDisplayName" = "Shocrot";
+"NSScreenCaptureUsageDescription" = "Shocrot needs to capture your screen to take screenshots and recognize text.";
+"NSHumanReadableCopyright" = "© 2026 WeaveNeuron";
