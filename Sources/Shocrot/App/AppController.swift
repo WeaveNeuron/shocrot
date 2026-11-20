@@ -50,7 +50,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         if attention != statusNeedsAttention {
             statusNeedsAttention = attention
             statusItem.button?.image = StatusIcon.image(attention: attention)
-            statusItem.button?.toolTip = attention ? "Shocrot：需要开启屏幕录制权限" : "Shocrot"
+            statusItem.button?.toolTip = attention ? L("status.tooltip.attention") : "Shocrot"
         }
         if attention, permissionTimer == nil {
             permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
@@ -93,16 +93,16 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         switch Permission.screenRecording.status {
         case .granted: break
         case .needsRelaunch:
-            addAttentionItem(to: menu, "重新启动 Shocrot", subtitle: "屏幕录制已开启，重新启动后生效",
+            addAttentionItem(to: menu, L("menu.relaunch"), subtitle: L("menu.relaunch.subtitle"),
                              symbol: "arrow.clockwise.circle.fill", color: .controlAccentColor, #selector(relaunch))
         case .missing:
-            addAttentionItem(to: menu, "开启屏幕录制权限…", subtitle: "截图、识别文字和翻译都需要它",
+            addAttentionItem(to: menu, L("menu.grantScreenRecording"), subtitle: L("menu.grantScreenRecording.subtitle"),
                              symbol: "exclamationmark.circle.fill", color: .systemOrange, #selector(showOnboarding))
         }
         if menu.numberOfItems > 0 { menu.addItem(.separator()) }
         for action in HotKeyAction.allCases {
             if action == .translateSelection {
-                addItem(to: menu, "3 秒后区域截图", "timer", #selector(delayedCapture))
+                addItem(to: menu, L("menu.delayedCapture"), "timer", #selector(delayedCapture))
                 menu.addItem(.separator())
             }
             let item = NSMenuItem(title: action.title, action: #selector(menuAction(_:)), keyEquivalent: "")
@@ -115,20 +115,20 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
             }
             // Accessibility is optional, so no dot on the icon; the one item that needs it says so.
             if action == .translateSelection, Permission.accessibility.status == .missing {
-                item.subtitle = "需要开启“辅助功能”权限"
+                item.subtitle = L("menu.needsAccessibility")
             }
             menu.addItem(item)
         }
         menu.addItem(.separator())
-        addItem(to: menu, "识别剪贴板图片中的文字", "doc.on.clipboard", #selector(recognizeClipboard))
-        addItem(to: menu, "识别图片文件中的文字…", "photo", #selector(recognizeFile))
+        addItem(to: menu, L("menu.recognizeClipboard"), "doc.on.clipboard", #selector(recognizeClipboard))
+        addItem(to: menu, L("menu.recognizeFile"), "photo", #selector(recognizeFile))
         menu.addItem(.separator())
-        addItem(to: menu, "历史记录…", "clock.arrow.circlepath", #selector(showHistory))
-        addItem(to: menu, "打开截图文件夹", "folder", #selector(openFolder))
-        if PinWindow.hasOpen { addItem(to: menu, "关闭全部贴图", "pin.slash", #selector(closePins)) }
+        addItem(to: menu, L("menu.history"), "clock.arrow.circlepath", #selector(showHistory))
+        addItem(to: menu, L("menu.openFolder"), "folder", #selector(openFolder))
+        if PinWindow.hasOpen { addItem(to: menu, L("menu.closeAllPins"), "pin.slash", #selector(closePins)) }
         menu.addItem(.separator())
-        addItem(to: menu, "设置…", "gearshape", #selector(showSettings), key: ",")
-        addItem(to: menu, "退出 Shocrot", "power", #selector(quit), key: "q")
+        addItem(to: menu, L("menu.settings"), "gearshape", #selector(showSettings), key: ",")
+        addItem(to: menu, L("menu.quit"), "power", #selector(quit), key: "q")
     }
 
     private func addItem(to menu: NSMenu, _ title: String, _ symbol: String, _ selector: Selector, key: String = "") {
@@ -187,30 +187,30 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         let main = NSMenu()
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "关于 Shocrot", action: #selector(showAbout), keyEquivalent: "").target = self
-        appMenu.addItem(withTitle: "设置…", action: #selector(showSettings), keyEquivalent: ",").target = self
+        appMenu.addItem(withTitle: L("menu.about"), action: #selector(showAbout), keyEquivalent: "").target = self
+        appMenu.addItem(withTitle: L("menu.settings"), action: #selector(showSettings), keyEquivalent: ",").target = self
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "退出 Shocrot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: L("menu.quit"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         main.addItem(appItem)
 
         let editItem = NSMenuItem()
-        let edit = NSMenu(title: "编辑")
-        edit.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
-        let redo = edit.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "z")
+        let edit = NSMenu(title: L("menu.edit"))
+        edit.addItem(withTitle: L("menu.undo"), action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: L("menu.redo"), action: Selector(("redo:")), keyEquivalent: "z")
         redo.keyEquivalentModifierMask = [.command, .shift]
         edit.addItem(.separator())
-        edit.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "拷贝", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(withTitle: L("menu.cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: L("menu.copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: L("menu.paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: L("menu.selectAll"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = edit
         main.addItem(editItem)
 
         let windowItem = NSMenuItem()
-        let window = NSMenu(title: "窗口")
-        window.addItem(withTitle: "关闭", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        window.addItem(withTitle: "最小化", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        let window = NSMenu(title: L("menu.window"))
+        window.addItem(withTitle: L("common.close"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        window.addItem(withTitle: L("menu.minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowItem.submenu = window
         main.addItem(windowItem)
         return main
@@ -262,7 +262,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         guard ScreenCapturer.canCapture else { OnboardingWindow.show(); return }
         Task { @MainActor in
             for n in stride(from: 3, through: 1, by: -1) {
-                Feedback.toast("\(n) 秒后截图", symbol: "timer")
+                Feedback.toast(L("toast.countdown", n), symbol: "timer")
                 try? await Task.sleep(for: .seconds(1))
             }
             Feedback.hideToast()
@@ -292,10 +292,10 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                 HistoryStore.shared.add(snap.image, scale: scale)
                 if after == .save {
                     let url = try await ImageOutput.saveInBackground(snap.image, scale: scale)
-                    CapturePreview.show(image: snap.image, scale: scale, status: "已保存", savedURL: url, on: snap.screen)
+                    CapturePreview.show(image: snap.image, scale: scale, status: L("common.saved"), savedURL: url, on: snap.screen)
                 } else {
                     ImageOutput.copy(snap.image, scale: scale)
-                    CapturePreview.show(image: snap.image, scale: scale, status: "已复制", savedURL: nil, on: snap.screen)
+                    CapturePreview.show(image: snap.image, scale: scale, status: L("common.copied"), savedURL: nil, on: snap.screen)
                 }
             } catch {
                 isPreparingCapture = false
@@ -313,10 +313,10 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                 HistoryStore.shared.add(image, scale: scale)
                 if Settings.shared.afterCapture == .save {
                     let url = try await ImageOutput.saveInBackground(image, scale: scale)
-                    CapturePreview.show(image: image, scale: scale, status: "已保存窗口", savedURL: url, on: screen)
+                    CapturePreview.show(image: image, scale: scale, status: L("preview.windowSaved"), savedURL: url, on: screen)
                 } else {
                     ImageOutput.copy(image, scale: scale)
-                    CapturePreview.show(image: image, scale: scale, status: "已复制窗口", savedURL: nil, on: screen)
+                    CapturePreview.show(image: image, scale: scale, status: L("preview.windowCopied"), savedURL: nil, on: screen)
                 }
             } catch {
                 Feedback.error(error)
@@ -331,7 +331,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                 Feedback.shutter()
                 HistoryStore.shared.add(image, scale: scale)
                 ImageOutput.copy(image, scale: scale)
-                CapturePreview.show(image: image, scale: scale, status: "已复制长截图", savedURL: nil, on: screen)
+                CapturePreview.show(image: image, scale: scale, status: L("preview.scrollCopied"), savedURL: nil, on: screen)
             }
             return
         }
@@ -343,7 +343,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                         return
                     }
                     CapturePreview.show(image: poster, scale: screen.backingScaleFactor,
-                                        status: "录屏已保存 \(RecordingModel.format(duration))",
+                                        status: L("preview.recordingSaved", RecordingModel.format(duration)),
                                         savedURL: url, videoURL: url, on: screen)
                 }
             }
@@ -354,14 +354,14 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         switch outcome {
         case .copy:
             ImageOutput.copy(result.image, scale: result.scale)
-            CapturePreview.show(image: result.image, textImage: result.ocrImage, scale: result.scale, status: "已复制",
+            CapturePreview.show(image: result.image, textImage: result.ocrImage, scale: result.scale, status: L("common.copied"),
                                 savedURL: nil, on: screen)
         case .save:
             Task { @MainActor in
                 do {
                     let url = try await ImageOutput.saveInBackground(result.image, scale: result.scale)
                     CapturePreview.show(image: result.image, textImage: result.ocrImage, scale: result.scale,
-                                        status: "已保存", savedURL: url, on: screen)
+                                        status: L("common.saved"), savedURL: url, on: screen)
                 } catch {
                     Feedback.error(error)
                 }
@@ -397,16 +397,16 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
             } else if model.text.isEmpty, !codes.isEmpty {
                 // Without the result window the code's content would otherwise be lost.
                 ImageOutput.copyText(codes.joined(separator: "\n"))
-                Feedback.toast(codes.count == 1 ? "已复制二维码内容" : "已复制 \(codes.count) 个二维码的内容")
+                Feedback.toast(codes.count == 1 ? L("common.qrCopied") : L("toast.qrCodesCopied", codes.count))
             } else if model.text.isEmpty {
-                Feedback.toast("没有识别到文字", symbol: "exclamationmark.triangle.fill")
+                Feedback.toast(L("common.noTextFound"), symbol: "exclamationmark.triangle.fill")
             } else {
                 if !wasAutoCopy { ImageOutput.copyText(model.text) }
-                let count = "已复制 \(model.text.filter { !$0.isWhitespace }.count) 个字"
+                let count = L10n.plural("toast.charsCopied", model.text.filter { !$0.isWhitespace }.count)
                 if codes.isEmpty {
                     Feedback.toast(count)
                 } else {
-                    Feedback.offer(count + "，另有二维码", symbol: "qrcode", action: "复制二维码") {
+                    Feedback.offer(L("toast.alsoQRCode", count), symbol: "qrcode", action: L("toast.copyQRCode")) {
                         ImageOutput.copyText(codes.joined(separator: "\n"))
                     }
                 }
@@ -424,7 +424,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                 let text = result.text(keepLineBreaks: false)
                 guard !text.isEmpty else {
                     TranslatePanel.cancelRecognizing()
-                    Feedback.toast("没有识别到文字", symbol: "exclamationmark.triangle.fill")
+                    Feedback.toast(L("common.noTextFound"), symbol: "exclamationmark.triangle.fill")
                     return
                 }
                 if let historyID { HistoryStore.shared.setText(text, for: historyID) }
@@ -440,7 +440,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         SelectionReader.log.info("translate selection: trusted=\(SelectionReader.isTrusted, privacy: .public)")
         guard SelectionReader.isTrusted else {
             Permission.accessibility.request()
-            Feedback.toast("划词翻译需要“辅助功能”权限", symbol: "exclamationmark.triangle.fill")
+            Feedback.toast(L("toast.selectionNeedsAccessibility"), symbol: "exclamationmark.triangle.fill")
             return
         }
         let mouse = NSEvent.mouseLocation
@@ -467,7 +467,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
 
     @objc func recognizeClipboard() {
         guard let (img, scale) = clipboardImage() else {
-            Feedback.toast("剪贴板中没有图片", symbol: "exclamationmark.triangle.fill")
+            Feedback.toast(L("toast.noImageInClipboard"), symbol: "exclamationmark.triangle.fill")
             return
         }
         recognize(image: img, scale: scale)
@@ -493,6 +493,6 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
            !text.isEmpty, let img = ImageOutput.textImage(text, scale: NSScreen.main?.backingScaleFactor ?? 2) {
             return PinWindow.pin(img, scale: NSScreen.main?.backingScaleFactor ?? 2)
         }
-        Feedback.toast("剪贴板中没有图片或文字", symbol: "exclamationmark.triangle.fill")
+        Feedback.toast(L("toast.noImageOrTextInClipboard"), symbol: "exclamationmark.triangle.fill")
     }
 }

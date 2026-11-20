@@ -9,7 +9,7 @@ enum OnboardingWindow {
             let host = NSHostingController(rootView: OnboardingView())
             host.sizingOptions = .preferredContentSize
             let w = NSWindow(contentViewController: host)
-            w.title = "欢迎使用 Shocrot"
+            w.title = L("onboarding.welcome")
             w.styleMask = [.titled, .closable, .fullSizeContentView]
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden
@@ -36,10 +36,10 @@ struct OnboardingView: View {
                 .frame(width: 72, height: 72)
                 .shadow(color: Color.accentColor.opacity(0.45), radius: 18, y: 6)
                 .padding(.top, 30)
-            Text("欢迎使用 Shocrot").font(.system(size: 22, weight: .semibold)).padding(.top, 8)
-            Text("一个按键，截图、录屏、标注、贴图、识别与翻译。").foregroundStyle(.secondary).padding(.top, 4)
+            Text(L("onboarding.welcome")).font(.system(size: 22, weight: .semibold)).padding(.top, 8)
+            Text(L("onboarding.tagline")).foregroundStyle(.secondary).padding(.top, 4)
 
-            card("快捷键") {
+            card(L("onboarding.shortcuts")) {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 20), GridItem(.flexible())], spacing: 10) {
                     ForEach(HotKeyAction.allCases) { action in
                         HStack(spacing: 8) {
@@ -56,16 +56,16 @@ struct OnboardingView: View {
             .padding(.top, 22)
 
             // Only what nothing works without; Accessibility is asked for when a feature first needs it.
-            card("权限") {
+            card(L("onboarding.permissions")) {
                 PermissionRow(.screenRecording)
             }
             .padding(.top, 14)
 
             HStack {
-                Label("默认只在本机处理，联网翻译需手动开启", systemImage: "lock")
+                Label(L("onboarding.privacy"), systemImage: "lock")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button(canCapture ? "开始使用" : "稍后") {
+                Button(canCapture ? L("onboarding.start") : L("onboarding.later")) {
                     UserDefaults.standard.set(true, forKey: "onboarded")
                     PermissionGuide.close()
                     OnboardingWindow.close()

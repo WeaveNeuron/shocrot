@@ -3,21 +3,25 @@ import NaturalLanguage
 
 struct Language: Hashable, Identifiable {
     let code: String // BCP-47, e.g. "zh-Hans"
-    let name: String
+    /// In the UI language; a code we have no name for shows as itself.
+    var name: String {
+        let key = "language.\(code)"
+        let name = L(key)
+        return name == key ? code : name
+    }
     var id: String { code }
     var locale: Locale.Language { Locale.Language(identifier: code) }
     var englishName: String { Locale(identifier: "en").localizedString(forIdentifier: code) ?? code }
     var isChinese: Bool { code.hasPrefix("zh") }
 
+    /// Names live in Localizable.strings as `language.<code>`.
     static let all: [Language] = [
-        ("zh-Hans", "简体中文"), ("zh-Hant", "繁體中文"), ("en", "英语"), ("ja", "日语"), ("ko", "韩语"),
-        ("fr", "法语"), ("de", "德语"), ("es", "西班牙语"), ("it", "意大利语"), ("pt", "葡萄牙语"),
-        ("ru", "俄语"), ("ar", "阿拉伯语"), ("th", "泰语"), ("vi", "越南语"), ("id", "印尼语"),
-        ("tr", "土耳其语"), ("pl", "波兰语"), ("nl", "荷兰语"), ("uk", "乌克兰语"), ("hi", "印地语"),
-    ].map { Language(code: $0.0, name: $0.1) }
+        "zh-Hans", "zh-Hant", "en", "ja", "ko", "fr", "de", "es", "it", "pt",
+        "ru", "ar", "th", "vi", "id", "tr", "pl", "nl", "uk", "hi",
+    ].map { Language(code: $0) }
 
     static func named(_ code: String) -> Language {
-        all.first { $0.code == code } ?? Language(code: code, name: code)
+        all.first { $0.code == code } ?? Language(code: code)
     }
 
     /// Detects the dominant language of a snippet, restricted to the languages we offer.

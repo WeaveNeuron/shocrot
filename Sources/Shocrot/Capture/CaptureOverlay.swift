@@ -170,8 +170,8 @@ final class CaptureSession {
             Self.offeredAccessibility = true
             // After the overlay and whatever follows the capture (the preview card) are up.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                Feedback.offer("开启“辅助功能”后，截图时可用滚轮选中窗口里的控件",
-                               symbol: "cursorarrow.rays", action: "开启") {
+                Feedback.offer(L("overlay.accessibilityOffer"),
+                               symbol: "cursorarrow.rays", action: L("common.turnOn")) {
                     MainActor.assumeIsolated { Permission.accessibility.request() }
                 }
             }
@@ -349,7 +349,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         if showsGuides, let p = mouseLocation { drawGuides(at: p, in: ctx) }
         if let p = mouseLocation, ProcessInfo.processInfo.systemUptime < accessHintUntil {
             // Right where the user is looking, above the pointer (the magnifier sits below it).
-            drawPointerHint("滚轮选择控件需要“辅助功能”权限，截图结束后可一键开启", symbol: "cursorarrow.rays", at: p)
+            drawPointerHint(L("overlay.wheelHint"), symbol: "cursorarrow.rays", at: p)
         }
         if showsMagnifier, let p = mouseLocation { drawMagnifier(at: p, in: ctx) }
     }
@@ -416,7 +416,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private func hoverBadgeText(for r: CGRect) -> String {
         var parts = ["\(Int(round(r.width * scale))) × \(Int(round(r.height * scale)))"]
         if snapDepth == 0, mode == .area {
-            parts.append("⌥单击 单独截取窗口")
+            parts.append(L("overlay.optionClickHint"))
         }
         return parts.joined(separator: "  ·  ")
     }
@@ -910,7 +910,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         field.delegate = self
         field.cell?.wraps = false
         field.cell?.isScrollable = true
-        field.placeholderString = "输入文字"
+        field.placeholderString = L("overlay.textPlaceholder")
         let height = ceil(field.font!.boundingRectForFont.height) + 4
         field.frame = CGRect(x: p.x - 2, y: p.y - height / 2, width: 160, height: height)
         addSubview(field)
@@ -997,7 +997,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
             if key == "c", let p = mouseLocation, let color = pixelColor(at: p) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(color.hexString, forType: .string)
-                Feedback.toast("已复制颜色 \(color.hexString)")
+                Feedback.toast(L("overlay.colorCopied", color.hexString))
                 session?.cancel()
             }
             return

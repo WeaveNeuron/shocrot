@@ -63,7 +63,7 @@ final class ScreenRecording: NSObject {
         }
         if !registered {
             model.stopShortcutAvailable = false
-            Feedback.toast("⌃⌘⎋ 已被占用，请点“停止”结束录屏", symbol: "exclamationmark.triangle.fill")
+            Feedback.toast(L("recording.stopShortcutTaken"), symbol: "exclamationmark.triangle.fill")
         }
         Task { await record() }
     }
@@ -142,7 +142,7 @@ final class ScreenRecording: NSObject {
                 switch outputResult {
                 case .success:
                     let url = try moveIntoSaveFolder()
-                    if interrupted { Feedback.toast("录屏被系统中断，已保存此前的内容", symbol: "exclamationmark.triangle.fill") }
+                    if interrupted { Feedback.toast(L("recording.interrupted"), symbol: "exclamationmark.triangle.fill") }
                     completion(url, duration)
                 case let .failure(error):
                     throw error
@@ -169,7 +169,7 @@ final class ScreenRecording: NSObject {
             let url = ImageOutput.uniqueURL(in: movies, ext: "mp4")
             if (try? FileManager.default.moveItem(at: tempURL, to: url)) != nil { kept = url }
         }
-        Feedback.toast("录屏未能正常保存，文件已保留：\(kept.lastPathComponent)", symbol: "exclamationmark.triangle.fill")
+        Feedback.toast(L("recording.saveFailed", kept.lastPathComponent), symbol: "exclamationmark.triangle.fill")
         NSWorkspace.shared.activateFileViewerSelecting([kept])
     }
 
@@ -335,23 +335,23 @@ private struct RecordingHUD: View {
                 .frame(width: 9, height: 9)
                 .symbolEffect(.pulse, isActive: model.isRecording)
                 .frame(width: 16)
-            Text(model.isRecording ? RecordingModel.format(model.elapsed) : "准备中…")
+            Text(model.isRecording ? RecordingModel.format(model.elapsed) : L("common.preparing"))
                 .font(.system(size: 13, weight: .semibold))
                 .monospacedDigit()
                 .contentTransition(.numericText())
                 .frame(width: 70, alignment: .leading)
-            Button("取消", action: onCancel)
+            Button(L("common.cancel"), action: onCancel)
                 .buttonStyle(.glass)
-                .help("取消并丢弃录屏")
+                .help(L("recording.cancelHelp"))
             Button(action: onStop) {
                 HStack(spacing: 5) {
                     Image(systemName: "stop.fill").font(.system(size: 9, weight: .bold))
-                    Text("停止")
+                    Text(L("recording.stop"))
                 }
                 .fixedSize()
             }
             .buttonStyle(HUDProminentButtonStyle(color: .red))
-            .help(model.stopShortcutAvailable ? "停止并保存 (⌃⌘⎋)" : "停止并保存")
+            .help(model.stopShortcutAvailable ? L("recording.stopAndSave") + " (⌃⌘⎋)" : L("recording.stopAndSave"))
             .disabled(!model.isRecording)
         }
         .controlSize(.regular)

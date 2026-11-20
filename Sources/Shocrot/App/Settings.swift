@@ -94,13 +94,13 @@ enum HotKeyAction: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .captureArea: return "区域截图"
-        case .captureOCR: return "识别文字 (OCR)"
-        case .captureScreen: return "全屏截图"
-        case .pinClipboard: return "贴图剪贴板"
-        case .translateSelection: return "划词翻译"
-        case .translateCapture: return "截图翻译"
-        case .translateInput: return "输入翻译"
+        case .captureArea: return L("action.captureArea")
+        case .captureOCR: return L("action.captureOCR")
+        case .captureScreen: return L("action.captureScreen")
+        case .pinClipboard: return L("action.pinClipboard")
+        case .translateSelection: return L("action.translateSelection")
+        case .translateCapture: return L("action.translateCapture")
+        case .translateInput: return L("action.translateInput")
         }
     }
 
@@ -141,9 +141,9 @@ enum AfterCaptureAction: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .edit: return "显示标注工具栏"
-        case .copy: return "直接复制到剪贴板"
-        case .save: return "直接保存到文件夹"
+        case .edit: return L("afterCapture.edit")
+        case .copy: return L("afterCapture.copy")
+        case .save: return L("afterCapture.save")
         }
     }
 }
@@ -156,7 +156,7 @@ enum GIFOptions {
     static let maxWidths = [0, 1280, 800]
     static let defaultMaxWidth = 0
 
-    static func widthTitle(_ w: Int) -> String { w == 0 ? "原尺寸" : "\(w) 像素" }
+    static func widthTitle(_ w: Int) -> String { w == 0 ? L("gif.originalSize") : L("gif.widthPixels", w) }
 }
 
 /// App-wide preferences backed by UserDefaults.
@@ -200,12 +200,12 @@ final class Settings: ObservableObject {
             do {
                 if launchAtLogin { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
                 if launchAtLogin, SMAppService.mainApp.status == .requiresApproval {
-                    Feedback.toast("请在系统设置的“登录项”中允许 Shocrot", symbol: "exclamationmark.triangle.fill")
+                    Feedback.toast(L("toast.loginItemApproval"), symbol: "exclamationmark.triangle.fill")
                     SMAppService.openSystemSettingsLoginItems()
                 }
             } catch {
                 NSLog("Shocrot: launch at login failed: \(error)")
-                Feedback.toast("无法更改登录时启动：\(error.localizedDescription)", symbol: "exclamationmark.triangle.fill")
+                Feedback.toast(L("toast.loginItemFailed", error.localizedDescription), symbol: "exclamationmark.triangle.fill")
             }
             // Show what the system actually did, not what was asked for.
             let actual = Self.launchesAtLogin(SMAppService.mainApp.status)

@@ -43,7 +43,7 @@ enum OCRWindow {
     static func show(model: OCRModel) {
         let host = NSHostingController(rootView: OCRView(model: model))
         let window = NSWindow(contentViewController: host)
-        window.title = "识别文字"
+        window.title = L("common.recognizeText")
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
@@ -116,9 +116,9 @@ struct OCRView: View {
                                 .onHover { hoveredLine = $0 ? line.id : (hoveredLine == line.id ? nil : hoveredLine) }
                                 .onTapGesture {
                                     ImageOutput.copyText(line.text)
-                                    Feedback.toast("已复制：\(line.text)")
+                                    Feedback.toast(L("ocr.copiedLine", line.text))
                                 }
-                                .help("点击复制这一行")
+                                .help(L("ocr.clickToCopyLine"))
                         }
                     }
                 }
@@ -141,12 +141,12 @@ struct OCRView: View {
     private var textPane: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("识别结果").font(.system(size: 15, weight: .semibold))
+                Text(L("ocr.result")).font(.system(size: 15, weight: .semibold))
                 Text(stats).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Picker("", selection: $model.keepLineBreaks) {
-                    Text("保留换行").tag(true)
-                    Text("合并为段").tag(false)
+                    Text(L("ocr.keepLineBreaks")).tag(true)
+                    Text(L("ocr.joinParagraphs")).tag(false)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
@@ -161,7 +161,7 @@ struct OCRView: View {
                 if let error = model.error {
                     placeholder(symbol: "exclamationmark.triangle", text: error)
                 } else if !model.isLoading && model.text.isEmpty && (model.result?.barcodes.isEmpty ?? true) {
-                    placeholder(symbol: "text.magnifyingglass", text: "没有识别到文字")
+                    placeholder(symbol: "text.magnifyingglass", text: L("common.noTextFound"))
                 } else {
                     TextEditor(text: $model.text)
                         .font(.system(size: 14))
@@ -174,7 +174,7 @@ struct OCRView: View {
 
             if let codes = model.result?.barcodes, !codes.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("二维码 / 条形码", systemImage: "qrcode").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Label(L("ocr.codes"), systemImage: "qrcode").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     ForEach(codes, id: \.self) { code in
                         HStack {
                             if let url = URL(string: code), url.scheme?.hasPrefix("http") == true {
@@ -183,7 +183,7 @@ struct OCRView: View {
                                 Text(code).lineLimit(2).textSelection(.enabled)
                             }
                             Spacer()
-                            Button { ImageOutput.copyText(code); Feedback.toast("已复制二维码内容") } label: {
+                            Button { ImageOutput.copyText(code); Feedback.toast(L("common.qrCopied")) } label: {
                                 Image(systemName: "doc.on.doc")
                             }
                             .buttonStyle(.borderless)
@@ -199,14 +199,14 @@ struct OCRView: View {
 
             Divider()
             HStack(spacing: 8) {
-                Button { TranslatePanel.show(text: model.text) } label: { Label("翻译", systemImage: "translate") }
+                Button { TranslatePanel.show(text: model.text) } label: { Label(L("common.translate"), systemImage: "translate") }
                     .disabled(model.text.isEmpty)
-                Button(action: search) { Label("搜索", systemImage: "magnifyingglass") }
+                Button(action: search) { Label(L("ocr.search"), systemImage: "magnifyingglass") }
                     .disabled(model.text.isEmpty)
-                Button { PinWindow.pin(model.image, scale: model.scale) } label: { Label("贴图", systemImage: "pin") }
+                Button { PinWindow.pin(model.image, scale: model.scale) } label: { Label(L("common.pin"), systemImage: "pin") }
                 Spacer()
                 Button(action: copy) {
-                    Label(copied ? "已复制" : "复制", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    Label(copied ? L("common.copied") : L("common.copy"), systemImage: copied ? "checkmark" : "doc.on.doc")
                         .frame(minWidth: 64)
                 }
                 .keyboardShortcut("c", modifiers: [.command, .shift])
@@ -229,9 +229,9 @@ struct OCRView: View {
     }
 
     private var stats: String {
-        guard let r = model.result else { return model.isLoading ? "正在识别…" : "" }
+        guard let r = model.result else { return model.isLoading ? L("ocr.recognizing") : "" }
         let chars = model.text.filter { !$0.isWhitespace }.count
-        return "\(r.lines.count) 行 · \(chars) 字"
+        return L10n.plural("ocr.lines", r.lines.count) + " · " + L10n.plural("ocr.characters", chars)
     }
 
     private func copy() {

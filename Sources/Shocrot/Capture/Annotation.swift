@@ -23,15 +23,15 @@ enum Tool: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .rect: return "矩形 (R)"
-        case .ellipse: return "椭圆 (O)"
-        case .arrow: return "箭头 (A)"
-        case .pen: return "画笔 (P)"
-        case .highlighter: return "荧光笔 (H)"
-        case .mosaic: return "马赛克 (M)"
-        case .text: return "文字 (T)"
-        case .counter: return "序号 (N)"
-        case .ruler: return "测量 (U)"
+        case .rect: return L("tool.rect")
+        case .ellipse: return L("tool.ellipse")
+        case .arrow: return L("tool.arrow")
+        case .pen: return L("tool.pen")
+        case .highlighter: return L("tool.highlighter")
+        case .mosaic: return L("tool.mosaic")
+        case .text: return L("tool.text")
+        case .counter: return L("tool.counter")
+        case .ruler: return L("tool.ruler")
         }
     }
 

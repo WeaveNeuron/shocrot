@@ -84,6 +84,7 @@ struct GIFExportTests {
     @Test func onlyOffersKnownOptions() {
         #expect(GIFOptions.frameRates.contains(GIFOptions.defaultFrameRate) && GIFOptions.defaultFrameRate == 12)
         #expect(GIFOptions.maxWidths == [0, 1280, 800] && GIFOptions.defaultMaxWidth == 0)
-        #expect(GIFOptions.widthTitle(0) == "原尺寸")
+        #expect(GIFOptions.widthTitle(0) == L("gif.originalSize"))
+        #expect(GIFOptions.widthTitle(800) == L("gif.widthPixels", 800))
     }
 }

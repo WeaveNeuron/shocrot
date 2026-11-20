@@ -210,7 +210,7 @@ enum ImageOutput {
             do {
                 guard let encoded = data(image, format: format, scale: scale) else { throw CocoaError(.fileWriteUnknown) }
                 try encoded.write(to: url)
-                Feedback.toast("已保存到 \(url.lastPathComponent)", symbol: "checkmark.circle.fill")
+                Feedback.toast(L("toast.savedTo", url.lastPathComponent), symbol: "checkmark.circle.fill")
             } catch {
                 Feedback.error(error)
             }

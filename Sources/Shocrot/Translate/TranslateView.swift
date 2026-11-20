@@ -56,12 +56,12 @@ struct TranslateView: View {
     private var header: some View {
         HStack(spacing: 2) {
             Image(systemName: "translate").foregroundStyle(.secondary)
-            Text("翻译").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+            Text(L("common.translate")).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
             Spacer()
-            IconButton(symbol: model.pinned ? "pin.fill" : "pin", help: model.pinned ? "取消固定" : "固定窗口（失去焦点不关闭）",
+            IconButton(symbol: model.pinned ? "pin.fill" : "pin", help: model.pinned ? L("translate.unpin") : L("translate.pin"),
                        active: model.pinned) { model.pinned.toggle() }
-            IconButton(symbol: "gearshape", help: "翻译设置") { SettingsWindow.show(tab: .translate) }
-            IconButton(symbol: "xmark", help: "关闭 (Esc)") { NSApp.keyWindow?.close() }
+            IconButton(symbol: "gearshape", help: L("translate.settings")) { SettingsWindow.show(tab: .translate) }
+            IconButton(symbol: "xmark", help: L("common.closeEsc")) { NSApp.keyWindow?.close() }
         }
         .frame(height: 22)
     }
@@ -70,7 +70,7 @@ struct TranslateView: View {
         guard let text = model.results.first(where: { $0.error == nil && !$0.isLoading && !$0.text.isEmpty })?.text
         else { return }
         ImageOutput.copyText(text)
-        Feedback.toast("已复制译文")
+        Feedback.toast(L("translate.copiedTranslation"))
     }
 
     private func requestDownload() {
@@ -90,13 +90,13 @@ struct TranslateView: View {
                 if model.isRecognizing {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
-                        Text("正在识别文字…")
+                        Text(L("translate.recognizing"))
                     }
                     .foregroundStyle(.secondary)
                     .padding(.leading, 5)
                     .padding(.top, 1)
                 } else if model.input.isEmpty {
-                    Text("输入文字，↩ 翻译，⇧↩ 换行，⇧⌘C 复制译文")
+                    Text(L("translate.placeholder"))
                         .foregroundStyle(.tertiary)
                         .padding(.leading, 5)
                         .padding(.top, 1)
@@ -121,17 +121,17 @@ struct TranslateView: View {
             }
             HStack(spacing: 2) {
                 if let detected = model.detected {
-                    Text(model.source == nil ? "检测到 \(detected.name)" : detected.name)
+                    Text(model.source == nil ? L("translate.detected", detected.name) : detected.name)
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                IconButton(symbol: speaker.speakingID == "input" ? "stop.fill" : "speaker.wave.2", help: "朗读") {
+                IconButton(symbol: speaker.speakingID == "input" ? "stop.fill" : "speaker.wave.2", help: L("translate.speak")) {
                     speaker.toggle(model.input, language: model.detected, id: "input")
                 }
                 .disabled(model.input.isEmpty)
-                IconButton(symbol: "doc.on.doc", help: "复制原文") { ImageOutput.copyText(model.input) }
+                IconButton(symbol: "doc.on.doc", help: L("translate.copySource")) { ImageOutput.copyText(model.input) }
                     .disabled(model.input.isEmpty)
-                IconButton(symbol: "xmark.circle.fill", help: "清空") { model.clear(); inputFocused = true }
+                IconButton(symbol: "xmark.circle.fill", help: L("translate.clear")) { model.clear(); inputFocused = true }
                     .disabled(model.input.isEmpty)
             }
             .padding(.leading, 5)
@@ -147,7 +147,7 @@ struct TranslateView: View {
 
     private var languageBar: some View {
         HStack(spacing: 8) {
-            LanguageMenu(selection: $model.source, automaticTitle: "自动检测", resolved: model.detected) { model.translate() }
+            LanguageMenu(selection: $model.source, automaticTitle: L("translate.autoDetect"), resolved: model.detected) { model.translate() }
             Button(action: model.swapLanguages) {
                 Image(systemName: "arrow.left.arrow.right").font(.system(size: 12, weight: .semibold))
                     .frame(width: 30, height: 26)
@@ -155,17 +155,17 @@ struct TranslateView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .help("互换语言")
-            .accessibilityLabel("互换语言")
-            LanguageMenu(selection: $model.target, automaticTitle: "自动", resolved: model.resolvedTarget) { model.translate() }
+            .help(L("translate.swap"))
+            .accessibilityLabel(L("translate.swap"))
+            LanguageMenu(selection: $model.target, automaticTitle: L("translate.auto"), resolved: model.resolvedTarget) { model.translate() }
         }
     }
 
     private var noServiceCard: some View {
         HStack {
-            Text("还没有启用翻译服务").foregroundStyle(.secondary)
+            Text(L("translate.noServices")).foregroundStyle(.secondary)
             Spacer()
-            Button("去设置") { SettingsWindow.show(tab: .translate) }
+            Button(L("translate.openSettings")) { SettingsWindow.show(tab: .translate) }
         }
         .font(.callout)
         .padding(12)
@@ -222,10 +222,10 @@ private struct ResultCard: View {
                 if result.isLoading {
                     ProgressView().controlSize(.mini)
                 } else if result.error == nil {
-                    IconButton(symbol: speaker.speakingID == "r\(result.id)" ? "stop.fill" : "speaker.wave.2", help: "朗读") {
+                    IconButton(symbol: speaker.speakingID == "r\(result.id)" ? "stop.fill" : "speaker.wave.2", help: L("translate.speak")) {
                         speaker.toggle(result.text, language: language, id: "r\(result.id)")
                     }
-                    IconButton(symbol: copied ? "checkmark" : "doc.on.doc", help: "复制译文") {
+                    IconButton(symbol: copied ? "checkmark" : "doc.on.doc", help: L("translate.copyTranslation")) {
                         ImageOutput.copyText(result.text)
                         copied = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
@@ -263,9 +263,9 @@ private struct ErrorRow: View {
             Spacer(minLength: 4)
             switch (error as? TranslationFailure)?.recovery {
             case .downloadLanguages:
-                Button("下载", action: onDownload)
+                Button(L("translate.download"), action: onDownload)
             case .openSettings:
-                Button("设置") { SettingsWindow.show(tab: .translate) }
+                Button(L("translate.settingsButton")) { SettingsWindow.show(tab: .translate) }
             case nil:
                 EmptyView()
             }
@@ -284,10 +284,10 @@ private struct DefinitionCard: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
                 Image(systemName: "character.book.closed").font(.system(size: 11)).foregroundStyle(.secondary)
-                Text("词典").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(.secondary)
+                Text(L("translate.dictionary")).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(.secondary)
                 Spacer()
-                IconButton(symbol: expanded ? "chevron.up" : "chevron.down", help: expanded ? "收起" : "展开") { expanded.toggle() }
-                IconButton(symbol: "arrow.up.right", help: "在“词典”中打开") { SystemDictionary.open(word) }
+                IconButton(symbol: expanded ? "chevron.up" : "chevron.down", help: expanded ? L("translate.collapse") : L("translate.expand")) { expanded.toggle() }
+                IconButton(symbol: "arrow.up.right", help: L("translate.openInDictionary")) { SystemDictionary.open(word) }
             }
             .frame(height: 18)
             Text(text)

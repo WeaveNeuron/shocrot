@@ -8,7 +8,7 @@ enum SettingsWindow {
         if let tab { SettingsRouter.shared.tab = tab }
         if window == nil {
             let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
-            w.title = "Shocrot 设置"
+            w.title = L("settings.windowTitle")
             w.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden
@@ -29,21 +29,21 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .general: "通用"
-        case .shortcuts: "快捷键"
-        case .ocr: "文字识别"
-        case .translate: "翻译"
-        case .about: "关于"
+        case .general: L("settings.tab.general")
+        case .shortcuts: L("settings.tab.shortcuts")
+        case .ocr: L("settings.tab.ocr")
+        case .translate: L("settings.tab.translate")
+        case .about: L("settings.tab.about")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .general: "截图行为、保存位置与系统权限"
-        case .shortcuts: "全局快捷键，在任何 App 中都可使用"
-        case .ocr: "识别语言与结果格式"
-        case .translate: "翻译服务、语言与大模型接入"
-        case .about: "版本信息"
+        case .general: L("settings.tab.general.subtitle")
+        case .shortcuts: L("settings.tab.shortcuts.subtitle")
+        case .ocr: L("settings.tab.ocr.subtitle")
+        case .translate: L("settings.tab.translate.subtitle")
+        case .about: L("settings.tab.about.subtitle")
         }
     }
 
@@ -148,37 +148,37 @@ private struct GeneralSettings: View {
     var body: some View {
         Form {
             Section {
-                Toggle("登录时自动启动", isOn: $s.launchAtLogin)
-                Toggle("截图时播放快门声", isOn: $s.playSound)
-                Toggle("选区时显示放大镜和取色", isOn: $s.showMagnifier)
-                Toggle("截图后在角落显示预览", isOn: $s.showPreview)
-                Toggle("保留历史记录", isOn: $s.keepHistory)
+                Toggle(L("settings.general.launchAtLogin"), isOn: $s.launchAtLogin)
+                Toggle(L("settings.general.playSound"), isOn: $s.playSound)
+                Toggle(L("settings.general.showMagnifier"), isOn: $s.showMagnifier)
+                Toggle(L("settings.general.showPreview"), isOn: $s.showPreview)
+                Toggle(L("settings.general.keepHistory"), isOn: $s.keepHistory)
             }
-            Section("截图") {
-                Picker("选区完成后", selection: $s.afterCapture) {
+            Section(L("settings.general.screenshots")) {
+                Picker(L("settings.general.afterCapture"), selection: $s.afterCapture) {
                     ForEach(AfterCaptureAction.allCases) { Text($0.title).tag($0) }
                 }
-                Picker("图片格式", selection: $s.imageFormat) {
-                    Text("PNG（无损）").tag(ImageFormat.png)
-                    Text("JPEG（体积小）").tag(ImageFormat.jpeg)
+                Picker(L("settings.general.imageFormat"), selection: $s.imageFormat) {
+                    Text(L("settings.general.png")).tag(ImageFormat.png)
+                    Text(L("settings.general.jpeg")).tag(ImageFormat.jpeg)
                 }
-                LabeledContent("保存位置") {
+                LabeledContent(L("settings.general.saveLocation")) {
                     HStack {
                         Text(s.saveDirectory.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
                             .lineLimit(1).truncationMode(.middle).foregroundStyle(.secondary)
-                        Button("更改…", action: chooseFolder)
+                        Button(L("settings.general.change"), action: chooseFolder)
                     }
                 }
             }
-            Section("录屏转 GIF") {
-                Picker("GIF 帧率", selection: $s.gifFrameRate) {
-                    ForEach(GIFOptions.frameRates, id: \.self) { Text("\($0) 帧/秒").tag($0) }
+            Section(L("settings.general.gif")) {
+                Picker(L("settings.general.gifFrameRate"), selection: $s.gifFrameRate) {
+                    ForEach(GIFOptions.frameRates, id: \.self) { Text(L("gif.fps", $0)).tag($0) }
                 }
-                Picker("GIF 最大宽度", selection: $s.gifMaxWidth) {
+                Picker(L("settings.general.gifMaxWidth"), selection: $s.gifMaxWidth) {
                     ForEach(GIFOptions.maxWidths, id: \.self) { Text(GIFOptions.widthTitle($0)).tag($0) }
                 }
             }
-            Section("权限") {
+            Section(L("settings.general.permissions")) {
                 ForEach(Permission.allCases) { PermissionRow($0) }
             }
         }
@@ -186,11 +186,11 @@ private struct GeneralSettings: View {
         .onChange(of: s.keepHistory) { _, keep in
             if !keep, !HistoryStore.shared.items.isEmpty { offerToClearHistory = true }
         }
-        .confirmationDialog("要删除已有的历史记录吗？", isPresented: $offerToClearHistory) {
-            Button("删除 \(HistoryStore.shared.items.count) 项", role: .destructive) { HistoryStore.shared.clear() }
-            Button("保留", role: .cancel) {}
+        .confirmationDialog(L("settings.general.clearHistory.title"), isPresented: $offerToClearHistory) {
+            Button(L10n.plural("settings.general.clearHistory.delete", HistoryStore.shared.items.count), role: .destructive) { HistoryStore.shared.clear() }
+            Button(L("settings.general.clearHistory.keep"), role: .cancel) {}
         } message: {
-            Text("之后不再保留新截图。已有的截图和识别文字仍在本机，已保存到文件夹的截图不受影响。")
+            Text(L("settings.general.clearHistory.message"))
         }
     }
 
@@ -200,7 +200,7 @@ private struct GeneralSettings: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.directoryURL = s.saveDirectory
-        panel.prompt = "选择"
+        panel.prompt = L("settings.general.choose")
         if panel.runModal() == .OK, let url = panel.url { s.saveDirectory = url }
     }
 }
@@ -224,31 +224,31 @@ private struct ShortcutSettings: View {
                             }
                             if app.failedHotKeys.contains(action) {
                                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                                    .help("此快捷键已被系统或其他应用占用")
+                                    .help(L("settings.shortcuts.taken"))
                             }
                         }
                     }
                 }
             } footer: {
-                Text("点击后按下新的组合键；按 ⌫ 清除，按 Esc 取消。")
+                Text(L("settings.shortcuts.footer"))
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("截图时的快捷操作") {
-                shortcutRow("选中窗口 / 单独截取窗口", "单击  ⌥单击")
-                shortcutRow("选择窗口里的控件", "滚轮（需辅助功能权限）")
-                shortcutRow("复制并完成", "↩  ⌘C  双击")
-                shortcutRow("保存 / 另存为", "⌘S  ⇧⌘S")
-                shortcutRow("识别文字 / 翻译 / 贴图", "⌘T  ⌘D  ⌘P")
-                shortcutRow("滚动截图 / 录屏", "⌘L  ⌘R")
-                shortcutRow("录屏中停止并保存", "⌃⌘⎋")
-                shortcutRow("标注工具", Tool.allCases.map { String($0.shortcut).uppercased() }.joined(separator: " "))
-                shortcutRow("撤销 / 重做", "⌘Z  ⇧⌘Z")
-                shortcutRow("微调选区", "方向键（⇧ 10 倍）")
-                shortcutRow("复制取色 / 全屏选区", "C  ⌘A")
-                shortcutRow("取消", "Esc  右键")
+            Section(L("settings.shortcuts.inCapture")) {
+                shortcutRow(L("settings.shortcuts.selectWindow"), L("settings.shortcuts.selectWindow.keys"))
+                shortcutRow(L("settings.shortcuts.selectControl"), L("settings.shortcuts.selectControl.keys"))
+                shortcutRow(L("settings.shortcuts.copyDone"), L("settings.shortcuts.copyDone.keys"))
+                shortcutRow(L("settings.shortcuts.save"), "⌘S  ⇧⌘S")
+                shortcutRow(L("settings.shortcuts.ocrTranslatePin"), "⌘T  ⌘D  ⌘P")
+                shortcutRow(L("settings.shortcuts.scrollRecord"), "⌘L  ⌘R")
+                shortcutRow(L("settings.shortcuts.stopRecording"), "⌃⌘⎋")
+                shortcutRow(L("settings.shortcuts.tools"), Tool.allCases.map { String($0.shortcut).uppercased() }.joined(separator: " "))
+                shortcutRow(L("settings.shortcuts.undoRedo"), "⌘Z  ⇧⌘Z")
+                shortcutRow(L("settings.shortcuts.nudge"), L("settings.shortcuts.nudge.keys"))
+                shortcutRow(L("settings.shortcuts.colorFullScreen"), "C  ⌘A")
+                shortcutRow(L("settings.shortcuts.cancel"), L("settings.shortcuts.cancel.keys"))
             }
             Section {
-                Button("恢复默认快捷键") {
+                Button(L("settings.shortcuts.restoreDefaults")) {
                     s.hotKeys = Dictionary(uniqueKeysWithValues: HotKeyAction.allCases.map { ($0, $0.defaultHotKey) })
                 }
             }
@@ -269,7 +269,7 @@ struct HotKeyRecorder: View {
 
     var body: some View {
         Button(action: toggle) {
-            Text(recording ? "请按下快捷键…" : (hotKey?.displayString ?? "未设置"))
+            Text(recording ? L("settings.shortcuts.recording") : (hotKey?.displayString ?? L("settings.shortcuts.notSet")))
                 .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundStyle(recording ? Color.accentColor : (hotKey == nil ? .secondary : .primary))
                 .frame(minWidth: 110)
@@ -297,7 +297,7 @@ struct HotKeyRecorder: View {
                 guard let hk = HotKey(event: event) else { NSSound.beep(); break }
                 if let other = HotKeyAction.allCases.first(where: { $0 != action && Settings.shared.hotKeys[$0] == hk }) {
                     NSSound.beep()
-                    Feedback.toast("\(hk.displayString) 已用于“\(other.title)”", symbol: "exclamationmark.triangle.fill")
+                    Feedback.toast(L("toast.shortcutInUse", hk.displayString, other.title), symbol: "exclamationmark.triangle.fill")
                     break
                 }
                 hotKey = hk
@@ -324,9 +324,9 @@ private struct OCRSettings: View {
     var body: some View {
         Form {
             Section {
-                Toggle("识别后自动复制文字", isOn: $s.ocrAutoCopy)
-                Toggle("识别后显示结果窗口", isOn: $s.ocrShowWindow)
-                Toggle("默认保留原始换行", isOn: $s.ocrKeepLineBreaks)
+                Toggle(L("settings.ocr.autoCopy"), isOn: $s.ocrAutoCopy)
+                Toggle(L("settings.ocr.showWindow"), isOn: $s.ocrShowWindow)
+                Toggle(L("settings.ocr.keepLineBreaks"), isOn: $s.ocrKeepLineBreaks)
             }
             Section {
                 ForEach(Settings.availableOCRLanguages, id: \.code) { lang in
@@ -341,9 +341,9 @@ private struct OCRSettings: View {
                     ))
                 }
             } header: {
-                Text("识别语言")
+                Text(L("settings.ocr.languages"))
             } footer: {
-                Text("使用 macOS 内置的 Vision 引擎，完全离线。全部不选时自动检测语言（推荐）；仅在识别不准时手动指定。")
+                Text(L("settings.ocr.footer"))
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -356,10 +356,10 @@ private struct AboutView: View {
         VStack(spacing: 12) {
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable().frame(width: 96, height: 96)
-            Text("Shocrot").font(.system(size: 22, weight: .semibold))
-            Text("截图 · 标注 · 贴图 · 文字识别 · 翻译")
+            Text(verbatim: "Shocrot").font(.system(size: 22, weight: .semibold))
+            Text(L("settings.about.tagline"))
                 .foregroundStyle(.secondary)
-            Text("版本 \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")")
+            Text(L("settings.about.version", Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"))
                 .font(.caption).foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -377,35 +377,35 @@ private struct TranslateSettings: View {
     var body: some View {
         Form {
             Section {
-                Picker("首选语言", selection: $s.primaryLanguage) {
+                Picker(L("settings.translate.primary"), selection: $s.primaryLanguage) {
                     ForEach(Language.all) { Text($0.name).tag($0.code) }
                 }
-                Picker("第二语言", selection: $s.secondaryLanguage) {
+                Picker(L("settings.translate.secondary"), selection: $s.secondaryLanguage) {
                     ForEach(Language.all) { Text($0.name).tag($0.code) }
                 }
             } footer: {
-                Text("首选语言的文字译为第二语言，其他语言一律译为首选语言。").font(.caption).foregroundStyle(.secondary)
+                Text(L("settings.translate.languagesFooter")).font(.caption).foregroundStyle(.secondary)
             }
 
-            Section("Apple 翻译") {
-                Toggle("启用 Apple 翻译（离线，免费）", isOn: $s.appleTranslateEnabled)
-                Button("管理离线语言…") {
+            Section(L("service.apple")) {
+                Toggle(L("settings.translate.enableApple"), isOn: $s.appleTranslateEnabled)
+                Button(L("settings.translate.manageLanguages")) {
                     NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension")!)
                 }
             }
 
             Section {
-                Toggle("启用 Google 翻译（免费，无需配置）", isOn: $s.googleTranslateEnabled)
+                Toggle(L("settings.translate.enableGoogle"), isOn: $s.googleTranslateEnabled)
             } header: {
-                Text("在线翻译")
+                Text(L("settings.translate.online"))
             } footer: {
-                Text("需要联网，要翻译的文字会发送给 Google。").font(.caption).foregroundStyle(.secondary)
+                Text(L("settings.translate.googleFooter")).font(.caption).foregroundStyle(.secondary)
             }
 
             Section {
-                Toggle("启用大模型翻译", isOn: $s.llm.enabled)
+                Toggle(L("settings.translate.enableLLM"), isOn: $s.llm.enabled)
                 if s.llm.enabled {
-                    Picker("预设", selection: Binding(
+                    Picker(L("settings.translate.preset"), selection: Binding(
                         get: { LLMConfig.presets.first { $0.baseURL == s.llm.baseURL }?.id ?? "" },
                         set: { id in
                             guard let p = LLMConfig.presets.first(where: { $0.id == id }) else { return }
@@ -416,21 +416,21 @@ private struct TranslateSettings: View {
                             adoptListedModel = true
                         })) {
                         ForEach(LLMConfig.presets) { Text($0.name).tag($0.id) }
-                        Text("自定义").tag("")
+                        Text(L("settings.translate.custom")).tag("")
                     }
-                    TextField("接口地址", text: $s.llm.baseURL, prompt: Text("https://…/v1"))
-                    SecureField("API Key", text: $apiKey, prompt: Text("本地模型可留空"))
+                    TextField(L("settings.translate.endpoint"), text: $s.llm.baseURL, prompt: Text(verbatim: "https://…/v1"))
+                    SecureField("API Key", text: $apiKey, prompt: Text(L("settings.translate.apiKeyPrompt")))
                         .onChange(of: apiKey) { _, key in
                             // Editing the address reloads the field with that server's key; nothing to store then,
                             // and a half-typed address (no key, nowhere to put one) is not a failure.
                             guard key != (Keychain.llmAPIKey(for: s.llm.baseURL) ?? "") else { return }
                             if !Keychain.setLLMAPIKey(key, for: s.llm.baseURL) {
-                                Feedback.toast("API Key 未能保存，请检查接口地址和钥匙串权限", symbol: "exclamationmark.triangle.fill")
+                                Feedback.toast(L("settings.translate.apiKeyNotSaved"), symbol: "exclamationmark.triangle.fill")
                             }
                         }
-                    LabeledContent("模型") {
+                    LabeledContent(L("settings.translate.model")) {
                         HStack(spacing: 6) {
-                            TextField("模型", text: $s.llm.model).labelsHidden()
+                            TextField(L("settings.translate.model"), text: $s.llm.model).labelsHidden()
                             if !models.isEmpty {
                                 Menu {
                                     ForEach(models, id: \.self) { m in Button(m) { s.llm.model = m } }
@@ -438,23 +438,23 @@ private struct TranslateSettings: View {
                                     Image(systemName: "chevron.up.chevron.down")
                                 }
                                 .menuStyle(.button).menuIndicator(.hidden).fixedSize()
-                                .help("从已安装的模型中选择")
+                                .help(L("settings.translate.pickModel"))
                             }
                         }
                     }
                     .task(id: s.llm.baseURL + apiKey) { await loadModels() }
-                    Toggle("关闭思考（推理模型响应更快）", isOn: $s.llm.disableThinking)
+                    Toggle(L("settings.translate.disableThinking"), isOn: $s.llm.disableThinking)
                     LabeledContent {
-                        Button("测试连接", action: test)
+                        Button(L("settings.translate.test"), action: test)
                     } label: {
-                        Text(testStatus ?? "支持所有 OpenAI 兼容接口").foregroundStyle(.secondary).lineLimit(2)
+                        Text(testStatus ?? L("settings.translate.compatible")).foregroundStyle(.secondary).lineLimit(2)
                     }
                 }
             } header: {
-                Text("大模型")
+                Text(L("settings.translate.llm"))
             } footer: {
                 if s.llm.enabled {
-                    Text("本地模型（Ollama / LM Studio）不出本机；云端服务会把待翻译文字发送给对应服务商。API Key 保存在钥匙串中。")
+                    Text(L("settings.translate.llmFooter"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -476,7 +476,7 @@ private struct TranslateSettings: View {
     }
 
     private func test() {
-        testStatus = "正在测试…"
+        testStatus = L("settings.translate.testing")
         let service = LLMTranslationService(config: s.llm, apiKey: Keychain.llmAPIKey(for: s.llm.baseURL))
         Task { @MainActor in
             do {
@@ -484,7 +484,7 @@ private struct TranslateSettings: View {
                 for try await partial in service.translate("Hello, world", from: .named("en"), to: .named("zh-Hans")) {
                     output = partial
                 }
-                testStatus = "✓ 连接成功：\(output)"
+                testStatus = L("settings.translate.connected", output)
             } catch {
                 testStatus = "✗ \(error.localizedDescription)"
             }

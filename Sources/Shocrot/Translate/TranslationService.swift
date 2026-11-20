@@ -47,7 +47,7 @@ func translationStream(_ body: @escaping (AsyncThrowingStream<String, Error>.Con
 // MARK: - Apple (on-device)
 
 struct AppleTranslationService: TranslationService {
-    let name = "Apple 翻译"
+    var name: String { L("service.apple") }
     let symbol = "apple.logo"
 
     func translate(_ text: String, from source: Language, to target: Language) -> AsyncThrowingStream<String, Error> {
@@ -73,9 +73,9 @@ struct AppleTranslationService: TranslationService {
             }
         }
         guard supported else {
-            throw TranslationFailure(errorDescription: "Apple 翻译暂不支持 \(source.name) → \(target.name)")
+            throw TranslationFailure(errorDescription: L("error.appleUnsupported", source.name, target.name))
         }
-        throw TranslationFailure(errorDescription: "需要先下载 \(source.name) 和 \(target.name) 的离线翻译语言",
+        throw TranslationFailure(errorDescription: L("error.appleNeedsDownload", source.name, target.name),
                                  recovery: .downloadLanguages)
     }
 
@@ -91,7 +91,7 @@ struct AppleTranslationService: TranslationService {
 // MARK: - Google (free web endpoint, no key)
 
 struct GoogleTranslationService: TranslationService {
-    let name = "Google 翻译"
+    var name: String { L("service.google") }
     let symbol = "globe"
 
     func translate(_ text: String, from source: Language, to target: Language) -> AsyncThrowingStream<String, Error> {
@@ -110,7 +110,7 @@ struct GoogleTranslationService: TranslationService {
             guard (response as? HTTPURLResponse)?.statusCode == 200,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
                   let segments = json.first as? [[Any]] else {
-                throw TranslationFailure(errorDescription: "Google 翻译暂时不可用，请检查网络")
+                throw TranslationFailure(errorDescription: L("error.googleUnavailable"))
             }
             continuation.yield(segments.compactMap { $0.first as? String }.joined())
         }
@@ -121,7 +121,7 @@ struct GoogleTranslationService: TranslationService {
 
 struct LLMConfig: Codable, Equatable {
     var enabled = false
-    var name = "大模型"
+    var name = L("service.llm.defaultName")
     var baseURL = "http://localhost:11434/v1"
     var model = "qwen3:4b"
     /// Sends `reasoning_effort: none` so thinking models answer immediately.
@@ -133,8 +133,8 @@ struct LLMConfig: Codable, Equatable {
     }
 
     static let presets: [Preset] = [
-        Preset(name: "Ollama（本地）", baseURL: "http://localhost:11434/v1", model: "qwen3:4b", disableThinking: true),
-        Preset(name: "LM Studio（本地）", baseURL: "http://localhost:1234/v1", model: "local-model", disableThinking: true),
+        Preset(name: L("service.llm.preset.ollama"), baseURL: "http://localhost:11434/v1", model: "qwen3:4b", disableThinking: true),
+        Preset(name: L("service.llm.preset.lmStudio"), baseURL: "http://localhost:1234/v1", model: "local-model", disableThinking: true),
         Preset(name: "OpenAI", baseURL: "https://api.openai.com/v1", model: "gpt-4.1-mini", disableThinking: false),
         Preset(name: "DeepSeek", baseURL: "https://api.deepseek.com/v1", model: "deepseek-chat", disableThinking: false),
     ]
@@ -163,7 +163,7 @@ struct LLMTranslationService: TranslationService {
         translationStream { continuation in
             let base = config.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
             guard let url = URL(string: base + "/chat/completions") else {
-                throw TranslationFailure(errorDescription: "接口地址无效", recovery: .openSettings)
+                throw TranslationFailure(errorDescription: L("error.invalidEndpoint"), recovery: .openSettings)
             }
             var request = URLRequest(url: url, timeoutInterval: 60)
             request.httpMethod = "POST"
@@ -189,7 +189,7 @@ struct LLMTranslationService: TranslationService {
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 var body = ""
                 for try await line in bytes.lines { body += line; if body.count > 400 { break } }
-                throw TranslationFailure(errorDescription: "接口返回 \(http.statusCode)：\(Self.message(from: body))",
+                throw TranslationFailure(errorDescription: L("error.httpStatus", http.statusCode, Self.message(from: body)),
                                          recovery: .openSettings)
             }
             var output = ""
@@ -206,7 +206,7 @@ struct LLMTranslationService: TranslationService {
                 continuation.yield(Self.stripThinking(output))
             }
             if Self.stripThinking(output).isEmpty {
-                throw TranslationFailure(errorDescription: "模型没有返回译文，可尝试开启“关闭思考”或更换模型", recovery: .openSettings)
+                throw TranslationFailure(errorDescription: L("error.noTranslation"), recovery: .openSettings)
             }
         }
     }
@@ -238,6 +238,6 @@ struct LLMTranslationService: TranslationService {
            let error = json["error"] as? [String: Any], let message = error["message"] as? String {
             return message
         }
-        return body.isEmpty ? "请求失败" : String(body.prefix(160))
+        return body.isEmpty ? L("error.requestFailed") : String(body.prefix(160))
     }
 }

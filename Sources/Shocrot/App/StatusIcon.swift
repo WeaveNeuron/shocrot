@@ -25,7 +25,7 @@ enum StatusIcon {
             return true
         }
         image.isTemplate = false
-        image.accessibilityDescription = "Shocrot，需要开启屏幕录制权限"
+        image.accessibilityDescription = L("status.icon.attention")
         return image
     }
 }

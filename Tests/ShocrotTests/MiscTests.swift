@@ -31,7 +31,9 @@ struct LanguageTests {
 
     @Test func unknownCodesFallBackToTheCode() {
         #expect(Language.named("xx").name == "xx")
-        #expect(Language.named("zh-Hans").name == "简体中文")
+        #expect(Language.named("zh-Hans").name == L("language.zh-Hans"))
+        #expect(L10n.string("language.zh-Hans", language: "en") == "Chinese (Simplified)")
+        #expect(L10n.string("language.zh-Hans", language: "zh-Hans") == "简体中文")
     }
 }
 
@@ -479,7 +481,7 @@ struct TransformTests {
         #expect(plain.isTemplate)
         #expect(!flagged.isTemplate)
         #expect(flagged.size == plain.size)
-        #expect(flagged.accessibilityDescription?.contains("屏幕录制") == true)
+        #expect(flagged.accessibilityDescription?.contains(L("permission.screenRecording")) == true)
     }
 }
 

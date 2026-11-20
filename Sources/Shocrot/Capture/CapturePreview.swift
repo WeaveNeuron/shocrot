@@ -120,7 +120,7 @@ final class PreviewModel: ObservableObject {
             let url = try await ImageOutput.saveInBackground(saving, scale: scale)
             guard image === saving else { return }
             savedURL = url
-            status = "已保存"
+            status = L("common.saved")
         } catch { Feedback.error(error) }
     }
 
@@ -134,7 +134,7 @@ final class PreviewModel: ObservableObject {
         savedURL = nil // the saved file is the other version
         tempURL = nil
         ImageOutput.copy(next, scale: scale)
-        status = isBeautified ? "已美化并复制" : "已复制原图"
+        status = isBeautified ? L("preview.beautifiedCopied") : L("preview.originalCopied")
     }
 
     /// Writes a GIF next to the recording, then puts it on the clipboard as a file. Frame rate and width come
@@ -150,7 +150,7 @@ final class PreviewModel: ObservableObject {
                 guard goOn else { return }
             }
             isExporting = true
-            status = "正在生成 GIF…"
+            status = L("preview.makingGIF")
             defer { isExporting = false }
             let s = Settings.shared
             do {
@@ -159,9 +159,9 @@ final class PreviewModel: ObservableObject {
                 ImageOutput.copyFile(gif)
                 savedURL = gif
                 tempURL = nil
-                status = "已生成 GIF 并复制"
+                status = L("preview.gifCopied")
             } catch {
-                status = "GIF 生成失败"
+                status = L("preview.gifFailed")
                 Feedback.error(error)
             }
         }
@@ -173,10 +173,10 @@ final class PreviewModel: ObservableObject {
         let previous = NSApp.isActive ? nil : NSWorkspace.shared.frontmostApplication
         NSApp.activate()
         let alert = NSAlert()
-        alert.messageText = "这段比较长，GIF 会很大，建议直接发视频"
-        alert.informativeText = "超过 1 分钟的录屏转成 GIF 要等较长时间。"
-        alert.addButton(withTitle: "继续生成")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = L("preview.longGIF.title")
+        alert.informativeText = L("preview.longGIF.message")
+        alert.addButton(withTitle: L("preview.longGIF.continue"))
+        alert.addButton(withTitle: L("common.cancel"))
         let goOn = alert.runModal() == .alertFirstButtonReturn
         if let previous, !previous.isTerminated { previous.activate() }
         return goOn
@@ -225,7 +225,7 @@ private struct PreviewCard: View {
                     .onTapGesture(count: 2) {
                         if let url = model.dragURL { NSWorkspace.shared.open(url) }
                     }
-                    .help("拖到其他应用，或双击用“预览”打开")
+                    .help(L("preview.dragHint"))
 
                 Button(action: model.onClose) {
                     Image(systemName: "xmark")
@@ -247,48 +247,48 @@ private struct PreviewCard: View {
                     .lineLimit(1)
                 Spacer(minLength: 6)
                 if model.videoURL != nil {
-                    PreviewButton(symbol: "doc.on.doc", help: "复制文件") {
+                    PreviewButton(symbol: "doc.on.doc", help: L("preview.copyFile")) {
                         if let url = model.savedURL { ImageOutput.copyFile(url) }
-                        model.status = "已复制文件"
+                        model.status = L("preview.fileCopied")
                     }
-                    PreviewButton(symbol: model.isExporting ? "hourglass" : "photo.stack", help: "转成 GIF") {
+                    PreviewButton(symbol: model.isExporting ? "hourglass" : "photo.stack", help: L("preview.makeGIF")) {
                         model.exportGIF()
                     }
                     .disabled(model.isExporting)
-                    PreviewButton(symbol: "play.rectangle", help: "播放") {
+                    PreviewButton(symbol: "play.rectangle", help: L("preview.play")) {
                         if let url = model.videoURL { NSWorkspace.shared.open(url) }
                     }
-                    PreviewButton(symbol: "folder", help: "在访达中显示") {
+                    PreviewButton(symbol: "folder", help: L("common.showInFinder")) {
                         if let url = model.savedURL { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                     }
                 } else {
-                    PreviewButton(symbol: "doc.on.doc", help: "复制") {
+                    PreviewButton(symbol: "doc.on.doc", help: L("common.copy")) {
                         ImageOutput.copy(model.image, scale: model.scale)
-                        model.status = "已复制"
+                        model.status = L("common.copied")
                     }
                     PreviewButton(symbol: model.isBeautified ? "photo" : "sparkles",
-                                  help: model.isBeautified ? "恢复原图" : "美化：加背景和阴影") {
+                                  help: model.isBeautified ? L("preview.restoreOriginal") : L("preview.beautify")) {
                         model.toggleBeautify()
                     }
                     if let url = model.savedURL {
-                        PreviewButton(symbol: "folder", help: "在访达中显示") {
+                        PreviewButton(symbol: "folder", help: L("common.showInFinder")) {
                             NSWorkspace.shared.activateFileViewerSelecting([url])
                         }
                     } else {
-                        PreviewButton(symbol: "square.and.arrow.down", help: "保存") {
+                        PreviewButton(symbol: "square.and.arrow.down", help: L("common.save")) {
                             Task { await model.save() }
                         }
                         .disabled(model.isSaving)
                     }
-                    PreviewButton(symbol: "pin", help: "贴到屏幕") {
+                    PreviewButton(symbol: "pin", help: L("common.pinToScreen")) {
                         PinWindow.pin(model.image, textImage: model.textImage, scale: model.scale)
                         model.onClose()
                     }
-                    PreviewButton(symbol: "text.viewfinder", help: "识别文字") {
+                    PreviewButton(symbol: "text.viewfinder", help: L("common.recognizeText")) {
                         AppController.shared.recognize(image: model.textImage, scale: model.scale)
                         model.onClose()
                     }
-                    PreviewButton(symbol: "translate", help: "翻译") {
+                    PreviewButton(symbol: "translate", help: L("common.translate")) {
                         AppController.shared.translate(image: model.textImage)
                         model.onClose()
                     }

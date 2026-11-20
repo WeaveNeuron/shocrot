@@ -7,7 +7,7 @@ enum HistoryWindow {
     static func show() {
         if window == nil {
             let w = NSWindow(contentViewController: NSHostingController(rootView: HistoryView()))
-            w.title = "历史记录"
+            w.title = L("history.title")
             w.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden
@@ -37,23 +37,23 @@ struct HistoryView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Text("历史记录").font(.system(size: 15, weight: .semibold))
-                Text("\(store.items.count) 项").font(.caption).foregroundStyle(.secondary)
+                Text(L("history.title")).font(.system(size: 15, weight: .semibold))
+                Text(L10n.plural("history.count", store.items.count)).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("搜索识别过的文字", text: $query).textFieldStyle(.plain)
+                    TextField(L("history.search"), text: $query).textFieldStyle(.plain)
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
                 .background(.background.secondary, in: RoundedRectangle(cornerRadius: 7))
                 .frame(width: 220)
                 Button { AppController.shared.openFolder() } label: { Image(systemName: "folder") }
-                    .help("打开截图保存文件夹")
-                    .accessibilityLabel("打开截图保存文件夹")
+                    .help(L("history.openFolder"))
+                    .accessibilityLabel(L("history.openFolder"))
                 Button { confirmClear = true } label: { Image(systemName: "trash") }
-                    .help("清空历史记录")
-                    .accessibilityLabel("清空历史记录")
+                    .help(L("history.clear"))
+                    .accessibilityLabel(L("history.clear"))
                     .disabled(store.items.isEmpty)
             }
             .buttonStyle(.borderless)
@@ -67,7 +67,8 @@ struct HistoryView: View {
                 VStack(spacing: 10) {
                     Image(systemName: query.isEmpty ? "photo.on.rectangle.angled" : "text.magnifyingglass")
                         .font(.system(size: 36, weight: .light)).foregroundStyle(.tertiary)
-                    Text(query.isEmpty ? "还没有截图，按 \(Settings.shared.hotKeys[.captureArea]?.displayString ?? "快捷键") 开始" : "没有匹配的记录")
+                    Text(query.isEmpty ? L("history.empty", Settings.shared.hotKeys[.captureArea]?.displayString ?? L("history.emptyShortcut"))
+                         : L("history.noMatches"))
                         .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -83,10 +84,10 @@ struct HistoryView: View {
             }
         }
         .ignoresSafeArea(edges: .top)
-        .confirmationDialog("清空所有历史记录？", isPresented: $confirmClear) {
-            Button("清空", role: .destructive) { store.clear() }
+        .confirmationDialog(L("history.clearConfirm"), isPresented: $confirmClear) {
+            Button(L("history.clearButton"), role: .destructive) { store.clear() }
         } message: {
-            Text("已保存到文件夹的截图不受影响。")
+            Text(L("history.clearMessage"))
         }
     }
 }
@@ -106,11 +107,11 @@ private struct HistoryCell: View {
                 if hovering {
                     RoundedRectangle(cornerRadius: 8).fill(.black.opacity(0.35))
                     HStack(spacing: 6) {
-                        action("doc.on.doc", "复制图片") { copy() }
-                        action("text.viewfinder", "识别文字") { ocr() }
-                        action("pin", "贴图") { pin() }
-                        action("square.and.arrow.down", "另存为") { if let img = image { ImageOutput.saveAs(img, scale: item.scale) } }
-                        action("trash", "删除") { HistoryStore.shared.delete(item) }
+                        action("doc.on.doc", L("common.copyImage")) { copy() }
+                        action("text.viewfinder", L("common.recognizeText")) { ocr() }
+                        action("pin", L("common.pin")) { pin() }
+                        action("square.and.arrow.down", L("common.saveAs")) { if let img = image { ImageOutput.saveAs(img, scale: item.scale) } }
+                        action("trash", L("common.delete")) { HistoryStore.shared.delete(item) }
                     }
                 }
             }
@@ -128,7 +129,7 @@ private struct HistoryCell: View {
                 Text(item.text?.replacingOccurrences(of: "\n", with: " ") ?? "\(Int(item.pixelSize.width)) × \(Int(item.pixelSize.height))")
                     .lineLimit(1)
                 Spacer(minLength: 4)
-                Text(item.date, format: .relative(presentation: .named)).foregroundStyle(.secondary)
+                Text(item.date, format: .relative(presentation: .named).locale(L10n.locale)).foregroundStyle(.secondary)
             }
             .font(.caption)
         }
@@ -137,13 +138,13 @@ private struct HistoryCell: View {
             if thumb == nil { Task { await loadThumbnail() } }
         }
         .contextMenu {
-            Button("复制图片") { copy() }
-            if let text = item.text { Button("复制文字") { ImageOutput.copyText(text) } }
-            Button("识别文字") { ocr() }
-            Button("贴图") { pin() }
-            Button("在访达中显示") { NSWorkspace.shared.activateFileViewerSelecting([HistoryStore.shared.url(for: item)]) }
+            Button(L("common.copyImage")) { copy() }
+            if let text = item.text { Button(L("history.copyText")) { ImageOutput.copyText(text) } }
+            Button(L("common.recognizeText")) { ocr() }
+            Button(L("common.pin")) { pin() }
+            Button(L("common.showInFinder")) { NSWorkspace.shared.activateFileViewerSelecting([HistoryStore.shared.url(for: item)]) }
             Divider()
-            Button("删除", role: .destructive) { HistoryStore.shared.delete(item) }
+            Button(L("common.delete"), role: .destructive) { HistoryStore.shared.delete(item) }
         }
     }
 
@@ -158,7 +159,7 @@ private struct HistoryCell: View {
     private func copy() {
         guard let img = image else { return }
         ImageOutput.copy(img, scale: item.scale)
-        Feedback.toast("已复制图片")
+        Feedback.toast(L("common.imageCopied"))
     }
 
     private func ocr() {

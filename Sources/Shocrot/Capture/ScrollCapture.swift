@@ -87,7 +87,7 @@ final class ScrollCapture {
         switch update {
         case .started, .unchanged: break
         case .appended: model.warning = nil
-        case .lost: model.warning = "滚动慢一点，或向下滚动"
+        case .lost: model.warning = L("scroll.tooFast")
         case .full: model.isFull = true
         }
     }
@@ -182,19 +182,19 @@ private struct ScrollCaptureHUD: View {
                 .symbolEffect(.bounce.down, options: .repeat(.periodic(delay: 1)), isActive: model.warning == nil)
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
-                Text(model.warning ?? "向下滚动页面").font(.system(size: 13, weight: .semibold))
-                Text(model.height > 0 ? "已拼接 \(model.height) pt 高" : "准备中…")
+                Text(model.warning ?? L("scroll.scrollDown")).font(.system(size: 13, weight: .semibold))
+                Text(model.height > 0 ? L("scroll.stitched", model.height) : L("common.preparing"))
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .monospacedDigit()
                     .contentTransition(.numericText())
             }
             .frame(width: 150, alignment: .leading)
-            Button("取消", action: onCancel)
+            Button(L("common.cancel"), action: onCancel)
                 .buttonStyle(.glass)
-                .help("取消 (Esc)")
-            Button("完成", action: onDone)
+                .help(L("toolbar.cancel"))
+            Button(L("common.done"), action: onDone)
                 .buttonStyle(HUDProminentButtonStyle(color: .accentColor))
-                .help("完成 (↩)")
+                .help(L("scroll.doneHelp"))
         }
         .controlSize(.regular)
         .padding(.leading, 14)

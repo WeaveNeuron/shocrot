@@ -9,15 +9,15 @@ enum Permission: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .screenRecording: "屏幕录制"
-        case .accessibility: "辅助功能"
+        case .screenRecording: L("permission.screenRecording")
+        case .accessibility: L("permission.accessibility")
         }
     }
 
     var detail: String {
         switch self {
-        case .screenRecording: "截图、识别文字与截图翻译"
-        case .accessibility: "划词翻译与截图时选择控件（可选）"
+        case .screenRecording: L("permission.screenRecording.detail")
+        case .accessibility: L("permission.accessibility.detail")
         }
     }
 
@@ -123,18 +123,18 @@ struct PermissionRow: View {
                 .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 2) {
                 Text(permission.title)
-                Text(status == .needsRelaunch ? "已开启，重新启动后生效" : permission.detail)
+                Text(status == .needsRelaunch ? L("permission.onAfterRestart") : permission.detail)
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
             switch status {
             case .granted:
-                Label("已开启", systemImage: "checkmark.circle.fill")
+                Label(L("permission.granted"), systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green).font(.callout)
             case .needsRelaunch:
-                Button("重新启动", action: Permission.relaunch).buttonStyle(.glassProminent)
+                Button(L("common.restart"), action: Permission.relaunch).buttonStyle(.glassProminent)
             case .missing:
-                Button("去开启", action: permission.request).buttonStyle(.glass)
+                Button(L("permission.grant"), action: permission.request).buttonStyle(.glass)
             }
         }
         .onReceive(timer) { _ in status = permission.status }
@@ -274,8 +274,8 @@ private struct PermissionGuideView: View {
                     .symbolEffect(.bounce.up, options: .repeat(.periodic(delay: 1.2)), isActive: !collapsed)
                     .contentTransition(.symbolEffect(.replace))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("开启“\(permission.title)”").font(.system(size: 13, weight: .semibold))
-                    Text(collapsed ? "在系统弹窗中验证，然后确认开关已打开" : "拖进上方列表，或打开它的开关")
+                    Text(L("guide.title", permission.title)).font(.system(size: 13, weight: .semibold))
+                    Text(collapsed ? L("guide.verify") : L("guide.drag"))
                         .lineLimit(1).fixedSize()
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .contentTransition(.opacity)
@@ -287,14 +287,14 @@ private struct PermissionGuideView: View {
                         .contentShape(.circle)
                 }
                 .buttonStyle(.plain).foregroundStyle(.tertiary)
-                .help("关闭指引")
+                .help(L("guide.close"))
             }
 
             if !collapsed {
                 HStack(spacing: 10) {
                     Image(nsImage: NSApp.applicationIconImage)
                         .resizable().frame(width: 30, height: 30)
-                    Text("Shocrot").font(.system(size: 13, weight: .medium))
+                    Text(verbatim: "Shocrot").font(.system(size: 13, weight: .medium))
                     Spacer()
                     Image(systemName: "hand.draw")
                         .font(.system(size: 13)).foregroundStyle(.tertiary)

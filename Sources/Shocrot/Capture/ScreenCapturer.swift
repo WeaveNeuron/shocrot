@@ -22,9 +22,9 @@ enum CaptureError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .windowGone: return "这个窗口已经关闭或隐藏，无法单独截取。"
-        case .permissionDenied: return "Shocrot 需要“屏幕录制”权限才能截图。"
-        case .noDisplay: return "没有找到可截取的显示器。"
+        case .windowGone: return L("error.windowGone")
+        case .permissionDenied: return L("error.permissionDenied")
+        case .noDisplay: return L("error.noDisplay")
         }
     }
 }

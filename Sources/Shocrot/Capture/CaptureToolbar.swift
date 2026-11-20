@@ -44,20 +44,20 @@ struct CaptureToolbar: View {
                         }
                     }
                     Divider().frame(height: 18).padding(.horizontal, 4)
-                    ToolButton(symbol: "arrow.uturn.backward", help: "撤销 (⌘Z)", enabled: state.canUndo) { onAction(.undo) }
-                    ToolButton(symbol: "arrow.uturn.forward", help: "重做 (⇧⌘Z)", enabled: state.canRedo) { onAction(.redo) }
+                    ToolButton(symbol: "arrow.uturn.backward", help: L("toolbar.undo"), enabled: state.canUndo) { onAction(.undo) }
+                    ToolButton(symbol: "arrow.uturn.forward", help: L("toolbar.redo"), enabled: state.canRedo) { onAction(.redo) }
                     Divider().frame(height: 18).padding(.horizontal, 4)
                 }
-                ToolButton(symbol: "text.viewfinder", help: "识别文字 (⌘T)") { onAction(.ocr) }
-                ToolButton(symbol: "translate", help: "翻译 (⌘D)") { onAction(.translate) }
-                ToolButton(symbol: "pin", help: "贴到屏幕 (⌘P)") { onAction(.pin) }
-                ToolButton(symbol: "rectangle.expand.vertical", help: "滚动截图 (⌘L)") { onAction(.scroll) }
-                ToolButton(symbol: "record.circle", help: "录屏 (⌘R)") { onAction(.record) }
-                ToolButton(symbol: "square.and.arrow.down", help: "保存 (⌘S)，另存为 (⇧⌘S)") { onAction(.save) }
-                    .contextMenu { Button("另存为…") { onAction(.saveAs) } }
+                ToolButton(symbol: "text.viewfinder", help: L("toolbar.ocr")) { onAction(.ocr) }
+                ToolButton(symbol: "translate", help: L("toolbar.translate")) { onAction(.translate) }
+                ToolButton(symbol: "pin", help: L("toolbar.pin")) { onAction(.pin) }
+                ToolButton(symbol: "rectangle.expand.vertical", help: L("toolbar.scroll")) { onAction(.scroll) }
+                ToolButton(symbol: "record.circle", help: L("toolbar.record")) { onAction(.record) }
+                ToolButton(symbol: "square.and.arrow.down", help: L("toolbar.save")) { onAction(.save) }
+                    .contextMenu { Button(L("common.saveAs")) { onAction(.saveAs) } }
                 Divider().frame(height: 18).padding(.horizontal, 4)
-                ToolButton(symbol: "xmark", help: "取消 (Esc)") { onAction(.cancel) }
-                ToolButton(symbol: "checkmark", help: "复制并完成 (↩ / ⌘C / 双击)", tint: .accentColor) { onAction(.copy) }
+                ToolButton(symbol: "xmark", help: L("toolbar.cancel")) { onAction(.cancel) }
+                ToolButton(symbol: "checkmark", help: L("toolbar.copyDone"), tint: .accentColor) { onAction(.copy) }
             }
             .padding(5)
             .background(Panel())
@@ -89,7 +89,7 @@ struct CaptureToolbar: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .help(["细", "中", "粗"][i])
+                        .help([L("toolbar.width.thin"), L("toolbar.width.medium"), L("toolbar.width.thick")][i])
                     }
                 }
                 .padding(.horizontal, 10)

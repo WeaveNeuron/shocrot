@@ -134,7 +134,7 @@ final class PinWindow: NSPanel {
             // ⌥/⌘ + scroll changes opacity. Sideways scrolling (no vertical delta) leaves it alone.
             guard event.scrollingDeltaY != 0 else { return }
             alphaValue = min(1, max(0.2, alphaValue + (event.scrollingDeltaY > 0 ? 0.05 : -0.05)))
-            showLabel("\(Int(alphaValue * 100))% 不透明")
+            showLabel(L("pin.opacityLabel", Int(alphaValue * 100)))
             return
         }
         let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY * 0.01 : event.scrollingDeltaY * 0.05
@@ -172,12 +172,12 @@ final class PinWindow: NSPanel {
 
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(withTitle: "复制", action: #selector(copyImage), keyEquivalent: "c").target = self
-        menu.addItem(withTitle: "保存…", action: #selector(saveImage), keyEquivalent: "s").target = self
-        menu.addItem(withTitle: "识别文字", action: #selector(recognizeText), keyEquivalent: "t").target = self
+        menu.addItem(withTitle: L("common.copy"), action: #selector(copyImage), keyEquivalent: "c").target = self
+        menu.addItem(withTitle: L("pin.menu.save"), action: #selector(saveImage), keyEquivalent: "s").target = self
+        menu.addItem(withTitle: L("common.recognizeText"), action: #selector(recognizeText), keyEquivalent: "t").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "原始大小", action: #selector(resetZoom), keyEquivalent: "0").target = self
-        let opacity = NSMenuItem(title: "不透明度", action: nil, keyEquivalent: "")
+        menu.addItem(withTitle: L("pin.menu.actualSize"), action: #selector(resetZoom), keyEquivalent: "0").target = self
+        let opacity = NSMenuItem(title: L("pin.menu.opacity"), action: nil, keyEquivalent: "")
         let sub = NSMenu()
         for v in [100, 80, 60, 40] {
             let item = NSMenuItem(title: "\(v)%", action: #selector(setOpacity(_:)), keyEquivalent: "")
@@ -188,22 +188,22 @@ final class PinWindow: NSPanel {
         opacity.submenu = sub
         menu.addItem(opacity)
         menu.addItem(.separator())
-        let right = menu.addItem(withTitle: "向右旋转", action: #selector(rotateRight), keyEquivalent: "r")
+        let right = menu.addItem(withTitle: L("pin.menu.rotateRight"), action: #selector(rotateRight), keyEquivalent: "r")
         right.target = self
-        let left = menu.addItem(withTitle: "向左旋转", action: #selector(rotateLeft), keyEquivalent: "r")
+        let left = menu.addItem(withTitle: L("pin.menu.rotateLeft"), action: #selector(rotateLeft), keyEquivalent: "r")
         left.keyEquivalentModifierMask = [.command, .shift]
         left.target = self
-        menu.addItem(withTitle: "水平翻转", action: #selector(flipHorizontal), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "垂直翻转", action: #selector(flipVertical), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L("pin.menu.flipHorizontal"), action: #selector(flipHorizontal), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L("pin.menu.flipVertical"), action: #selector(flipVertical), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "关闭", action: #selector(closePin), keyEquivalent: "w").target = self
-        menu.addItem(withTitle: "关闭全部贴图", action: #selector(closeAllPins), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L("common.close"), action: #selector(closePin), keyEquivalent: "w").target = self
+        menu.addItem(withTitle: L("menu.closeAllPins"), action: #selector(closeAllPins), keyEquivalent: "").target = self
         return menu
     }
 
     @objc private func copyImage() {
         ImageOutput.copy(image, scale: scale)
-        Feedback.toast("已复制图片")
+        Feedback.toast(L("common.imageCopied"))
     }
 
     @objc private func saveImage() { ImageOutput.saveAs(image, scale: scale) }
@@ -262,11 +262,11 @@ struct PinActionBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            button("doc.on.doc", "复制 (⌘C)", copy)
-            button("square.and.arrow.down", "保存 (⌘S)", save)
-            button("text.viewfinder", "识别文字 (⌘T)", ocr)
+            button("doc.on.doc", L("pin.bar.copy"), copy)
+            button("square.and.arrow.down", L("pin.bar.save"), save)
+            button("text.viewfinder", L("toolbar.ocr"), ocr)
             Rectangle().fill(.white.opacity(0.2)).frame(width: 1, height: 14).padding(.horizontal, 2)
-            button("xmark", "关闭 (Esc)", close)
+            button("xmark", L("common.closeEsc"), close)
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 3)
