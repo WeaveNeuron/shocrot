@@ -4,7 +4,7 @@
 # Usage: scripts/build_app.sh [--adhoc] [--notarize] [--package] [--install]
 #   --adhoc     sign ad-hoc and skip every keychain lookup (local checks, CI); same as SHOCROT_SIGN_IDENTITY=-
 #   --notarize  notarize and staple (needs a Developer ID identity); implies --package
-#   --package   write build/Shocrot-<version>-macOS-universal.zip and its .sha256 for GitHub Releases
+#   --package   write build/Shocrot-<version>-macOS-universal.{dmg,zip} and their .sha256 for GitHub Releases
 #   --install   copy the app to /Applications (quits a running Shocrot first)
 #
 # Environment: SHOCROT_VERSION (default 1.0.0), SHOCROT_SIGN_IDENTITY, SHOCROT_TEAM_ID, SHOCROT_NOTARY_PROFILE.
@@ -32,6 +32,7 @@ BUILD="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 APP="build/Shocrot.app"
 LOCALIZATIONS=(en zh-Hans)   # Sources/Shocrot/Resources/<lang>.lproj; en is the development language
 ZIP="build/Shocrot-${VERSION}-macOS-universal.zip"
+DMG="build/Shocrot-${VERSION}-macOS-universal.dmg"
 
 swift build -c release --arch arm64 --arch x86_64
 BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/Shocrot"
@@ -156,13 +157,32 @@ fi
 if (( PACKAGE )); then
   # The signature and the stapled ticket live inside the bundle. Local extended attributes (such as
   # com.apple.provenance) are left out so the archive has no __MACOSX/._* entries.
-  rm -f "$ZIP" "$ZIP.sha256"
+  rm -f "$ZIP" "$ZIP.sha256" "$DMG" "$DMG.sha256"
   ditto -c -k --norsrc --noextattr --keepParent "$APP" "$ZIP"
   (cd "$(dirname "$ZIP")" && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256")
   echo "Packaged $ZIP"
   echo "SHA-256:  $(cut -d' ' -f1 "$ZIP.sha256")  (also in $ZIP.sha256)"
+
+  DMG_STAGE="$(mktemp -d)"
+  ditto "$APP" "$DMG_STAGE/Shocrot.app"
+  ln -s /Applications "$DMG_STAGE/Applications"
+  hdiutil create -volname "Shocrot ${VERSION}" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG" >/dev/null
+  rm -rf "$DMG_STAGE"
+  if [[ "$SIGN" == "Developer ID Application:"* ]]; then
+    codesign --force --timestamp --sign "$SIGN" "$DMG"
+  fi
+  if (( NOTARIZE )); then
+    xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
+    xcrun stapler staple "$DMG"
+    spctl --assess --type open --context context:primary-signature --verbose=2 "$DMG"
+    echo "Notarized and stapled: $DMG"
+  fi
+  (cd "$(dirname "$DMG")" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
+  echo "Packaged $DMG"
+  echo "SHA-256:  $(cut -d' ' -f1 "$DMG.sha256")  (also in $DMG.sha256)"
+
   if [[ "$SIGN" != "Developer ID Application:"* ]] || (( ! NOTARIZE )); then
-    echo "Note: this archive is not notarized; Gatekeeper blocks it on other Macs. Release builds use --notarize." >&2
+    echo "Note: these archives are not notarized; Gatekeeper blocks them on other Macs. Release builds use --notarize." >&2
   fi
 fi
 

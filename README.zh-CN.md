@@ -31,14 +31,14 @@ Shocrot 是一款轻量的 macOS 菜单栏工具，一个快捷键就能截图�
 ## 下载安装
 
 1. 打开 GitHub Releases 上的[最新版本](https://github.com/WeaveNeuron/shocrot/releases/latest)；全部版本见 [Releases 页面](https://github.com/WeaveNeuron/shocrot/releases)。
-2. 在 **Assets** 中下载 `Shocrot-<版本号>-macOS-universal.zip`。如需校验，可同时下载对应的 `.sha256` 文件并运行：
+2. 在 **Assets** 中下载 `Shocrot-<版本号>-macOS-universal.dmg`（或 `.zip` 压缩包）。如需校验，可同时下载对应的 `.sha256` 文件并运行：
 
    ```sh
    cd ~/Downloads
-   shasum -a 256 -c Shocrot-<版本号>-macOS-universal.zip.sha256
+   shasum -a 256 -c Shocrot-<版本号>-macOS-universal.dmg.sha256
    ```
 
-3. 双击 zip 解压，把 **Shocrot.app** 拖进“应用程序”文件夹。
+3. 双击打开 `.dmg`，把 **Shocrot.app** 拖进 **Applications** 文件夹（如用 `.zip`，双击解压后移入“应用程序”文件夹）。
 4. 从“应用程序”中打开 Shocrot。它常驻菜单栏（不在 Dock 中显示），首次打开会显示欢迎窗口。
 5. 点击“屏幕录制”旁的“去开启”，在“系统设置 › 隐私与安全性 › 录屏与系统录音”中允许 Shocrot，然后按提示重新启动 Shocrot。
 

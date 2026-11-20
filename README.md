@@ -31,14 +31,14 @@ Shocrot is a lightweight menu bar app for macOS that puts screenshots, screen re
 ## Install
 
 1. Open the [latest release](https://github.com/WeaveNeuron/shocrot/releases/latest) on GitHub Releases. All versions are listed on the [Releases page](https://github.com/WeaveNeuron/shocrot/releases).
-2. Under **Assets**, download `Shocrot-<version>-macOS-universal.zip`. Optionally, also download the matching `.sha256` file and verify the download:
+2. Under **Assets**, download `Shocrot-<version>-macOS-universal.dmg` (or the `.zip` archive). Optionally, also download the matching `.sha256` file and verify the download:
 
    ```sh
    cd ~/Downloads
-   shasum -a 256 -c Shocrot-<version>-macOS-universal.zip.sha256
+   shasum -a 256 -c Shocrot-<version>-macOS-universal.dmg.sha256
    ```
 
-3. Double-click the zip to unpack it, then drag **Shocrot.app** into your **Applications** folder.
+3. Open the `.dmg` and drag **Shocrot.app** into **Applications** (if using the `.zip`, double-click to unpack and move **Shocrot.app** into **Applications**).
 4. Open Shocrot from Applications. It runs in the menu bar, not the Dock, and opens a welcome window the first time.
 5. Click **Turn On** next to Screen Recording and allow Shocrot in **System Settings › Privacy & Security › Screen & System Audio Recording**, then restart Shocrot when asked.
 
