@@ -1,15 +1,45 @@
 #!/bin/zsh
-# Builds and signs build/Shocrot.app (release). Usage: scripts/build_app.sh [--install] [--notarize]
+# Builds and signs build/Shocrot.app (release, universal).
+#
+# Usage: scripts/build_app.sh [--adhoc] [--notarize] [--package] [--install]
+#   --adhoc     sign ad-hoc and skip every keychain lookup (local checks, CI); same as SHOCROT_SIGN_IDENTITY=-
+#   --notarize  notarize and staple (needs a Developer ID identity); implies --package
+#   --package   write build/Shocrot-<version>-macOS-universal.zip and its .sha256 for GitHub Releases
+#   --install   copy the app to /Applications (quits a running Shocrot first)
+#
+# Environment: SHOCROT_VERSION (default 1.0.0), SHOCROT_SIGN_IDENTITY, SHOCROT_TEAM_ID, SHOCROT_NOTARY_PROFILE.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+INSTALL=0; NOTARIZE=0; PACKAGE=0; ADHOC=0
+for arg in "$@"; do
+  case "$arg" in
+    --install) INSTALL=1 ;;
+    --notarize) NOTARIZE=1; PACKAGE=1 ;;
+    --package) PACKAGE=1 ;;
+    --adhoc) ADHOC=1 ;;
+    -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "Unknown option: $arg" >&2; exit 2 ;;
+  esac
+done
+if (( ADHOC && NOTARIZE )); then
+  echo "--adhoc and --notarize can't be combined: notarization needs a Developer ID signature." >&2
+  exit 2
+fi
 
 VERSION="${SHOCROT_VERSION:-1.0.0}"
 BUILD="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 APP="build/Shocrot.app"
 LOCALIZATIONS=(en zh-Hans)   # Sources/Shocrot/Resources/<lang>.lproj; en is the development language
+ZIP="build/Shocrot-${VERSION}-macOS-universal.zip"
 
 swift build -c release --arch arm64 --arch x86_64
 BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/Shocrot"
+ARCHS="$(lipo -archs "$BIN")"
+if [[ " $ARCHS " != *" arm64 "* || " $ARCHS " != *" x86_64 "* ]]; then
+  echo "Expected a universal binary (arm64 + x86_64), got: $ARCHS" >&2
+  exit 1
+fi
 
 # App icon (regenerated only when missing)
 if [[ ! -f Resources/AppIcon.icns ]]; then
@@ -75,12 +105,13 @@ EOF
 plutil -lint -s "$APP/Contents/Info.plist"
 
 # Signing identity, in order of preference:
-#   1. $SHOCROT_SIGN_IDENTITY
+#   1. $SHOCROT_SIGN_IDENTITY ("-" or --adhoc: ad-hoc, no keychain access at all)
 #   2. Developer ID Application for team $SHOCROT_TEAM_ID (distributable, notarizable)
 #   3. "Shocrot Local Signing" self-signed cert (scripts/make_local_cert.sh)
 #   4. ad-hoc ("-"), which loses privacy grants on every rebuild
 TEAM_ID="${SHOCROT_TEAM_ID:-CQ4STM9Q69}"
 IDENTITY="${SHOCROT_SIGN_IDENTITY:-}"
+(( ADHOC )) && IDENTITY="-"
 if [[ -z "$IDENTITY" ]]; then
   IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
     | sed -n "s/.*\"\(Developer ID Application: .* (${TEAM_ID})\)\".*/\1/p" | head -1)"
@@ -100,17 +131,9 @@ if [[ "$SIGN" == "Developer ID Application:"* ]]; then
 else
   codesign --force --deep --sign "$SIGN" --identifier com.weaveneuron.shocrot "$APP"
 fi
+codesign --verify --strict "$APP"
 echo "Signed with: $SIGN"
-echo "Built $APP"
-
-INSTALL=0; NOTARIZE=0
-for arg in "$@"; do
-  case "$arg" in
-    --install) INSTALL=1 ;;
-    --notarize) NOTARIZE=1 ;;
-    *) echo "Unknown option: $arg" >&2; exit 2 ;;
-  esac
-done
+echo "Built $APP ($VERSION, build $BUILD; $ARCHS; localizations: ${LOCALIZATIONS[*]})"
 
 if (( NOTARIZE )); then
   if [[ "$SIGN" != "Developer ID Application:"* ]]; then
@@ -120,15 +143,27 @@ if (( NOTARIZE )); then
   # Credentials come from a notarytool keychain profile, created once with:
   #   xcrun notarytool store-credentials shocrot-notary --apple-id <id> --team-id <team>
   PROFILE="${SHOCROT_NOTARY_PROFILE:-shocrot-notary}"
-  ZIP="build/Shocrot-${VERSION}-${BUILD}.zip"
-  rm -f "$ZIP"
-  ditto -c -k --keepParent "$APP" "$ZIP"
-  xcrun notarytool submit "$ZIP" --keychain-profile "$PROFILE" --wait
+  UPLOAD="build/Shocrot-${VERSION}-${BUILD}-notarize.zip"
+  rm -f "$UPLOAD"
+  ditto -c -k --keepParent "$APP" "$UPLOAD"
+  xcrun notarytool submit "$UPLOAD" --keychain-profile "$PROFILE" --wait
+  rm -f "$UPLOAD"
   xcrun stapler staple "$APP"
-  rm -f "$ZIP"
-  ditto -c -k --keepParent "$APP" "$ZIP"
   spctl --assess --type execute --verbose=2 "$APP"
-  echo "Notarized and stapled: $APP (zip: $ZIP)"
+  echo "Notarized and stapled: $APP"
+fi
+
+if (( PACKAGE )); then
+  # The signature and the stapled ticket live inside the bundle. Local extended attributes (such as
+  # com.apple.provenance) are left out so the archive has no __MACOSX/._* entries.
+  rm -f "$ZIP" "$ZIP.sha256"
+  ditto -c -k --norsrc --noextattr --keepParent "$APP" "$ZIP"
+  (cd "$(dirname "$ZIP")" && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256")
+  echo "Packaged $ZIP"
+  echo "SHA-256:  $(cut -d' ' -f1 "$ZIP.sha256")  (also in $ZIP.sha256)"
+  if [[ "$SIGN" != "Developer ID Application:"* ]] || (( ! NOTARIZE )); then
+    echo "Note: this archive is not notarized; Gatekeeper blocks it on other Macs. Release builds use --notarize." >&2
+  fi
 fi
 
 if (( INSTALL )); then
