@@ -1,68 +1,136 @@
+English | [简体中文](README.zh-CN.md)
+
 # Shocrot
 
-A simple macOS menu bar app for screenshots, OCR, and translation. Written in pure Swift (AppKit + SwiftUI) with no third-party dependencies. OCR uses the system Vision framework and works fully offline.
+Shocrot is a lightweight menu bar app for macOS that puts screenshots, screen recording, annotation, text recognition (OCR) and translation behind a single shortcut. It is written in pure Swift (AppKit + SwiftUI) with no third-party dependencies. Text recognition uses the Vision framework built into macOS and works fully offline.
 
-简约的 macOS 截图 + OCR + 翻译菜单栏工具。纯 Swift（AppKit + SwiftUI），无第三方依赖；OCR 使用系统内置 Vision，完全离线。
+## Highlights
 
-## 功能
+- **Area capture**: snaps to windows, magnifier with color picker (press C to copy the color), pixel size readout, 8-way resize and drag, arrow-key nudging. ⌥-click captures a single window with its shadow.
+- **Annotation**: rectangle, ellipse, arrow, pen, highlighter, mosaic, text, step numbers and a measuring ruler; 8 colors and 3 line widths; undo and redo. Hold ⇧ for squares and 45° arrows.
+- **Scrolling capture**: select an area, scroll the page, and Shocrot stitches it into one long image.
+- **Screen recording**: record a selection to MP4 (stop with ⌃⌘⎋ or the HUD button), then export a looping GIF from the preview card. Frame rate and maximum width are set in Settings.
+- **Beautify**: one click on the preview card adds a gradient background, rounded corners and a shadow.
+- **Text recognition**: select an area to recognize text and copy it automatically. In the result window you can edit the text, click a line to copy it, keep line breaks or join lines into paragraphs, translate or search. QR codes and barcodes are read as well.
+- **Translation**: translate selected text, a screenshot or typed text in one floating panel. The language is detected automatically (your primary language ↔ your secondary language), single words show the system dictionary definition, and you can read results aloud, copy them or pin the panel.
+  - **Apple Translate**: on-device and offline; missing languages can be downloaded right from the panel.
+  - **Google Translate**: free with no setup (needs an internet connection, off by default).
+  - **LLMs**: any OpenAI-compatible API (OpenAI, DeepSeek, Ollama, LM Studio…), with streaming output. Local reasoning models can skip "thinking" for instant results. API keys are stored in the Keychain.
+- **Pins**: keep a capture floating above all windows. Scroll to zoom, ⌥/⌘ + scroll to change opacity, ⌘R / ⇧⌘R to rotate, right-click to flip, double-click or Esc to close.
+- **History**: the last 200 captures, searchable by their recognized text.
+- Full-screen capture, pinning the clipboard, recognizing text in clipboard images or image files, customizable global shortcuts, and Open at Login.
+- **Languages**: English and Simplified Chinese. Shocrot follows the system language by default; to change it, open Settings › General › Language and restart the app.
+- **Private by default**: everything is processed on your Mac. Online translation (Google or a cloud LLM) only runs after you turn it on.
 
-- **区域截图**：自动吸附窗口、放大镜取色（按 C 复制色值）、像素尺寸提示、8 向调整与拖动、方向键微调
-- **标注**：矩形、椭圆、箭头、画笔、荧光笔、马赛克、文字、序号、测量；8 色 3 档粗细；撤销/重做；按住 ⇧ 画正方形 / 45° 箭头
-- **滚动截图**：框选后滚动页面，自动拼接成长图
-- **录屏**：录制选区为 MP4（⌃⌘⎋ 或 HUD 按钮停止），可在预览卡片中导出循环 GIF（帧率和最大宽度在设置里选）
-- **美化**：预览卡片一键加渐变背景、圆角和阴影
-- **文字识别**：框选即识别，自动复制；结果窗口可编辑、按行点选复制、保留换行/合并为段、翻译、搜索；同时识别二维码/条形码
-- **翻译**：划词翻译、截图翻译、输入翻译共用一个浮动面板；自动检测语言（母语 ↔ 第二语言），单词显示系统词典释义，朗读、复制、固定窗口
-  - **Apple 翻译**：系统离线翻译，缺少语言包时可在面板内一键下载
-  - **Google 翻译**：免费、无需配置（需联网，默认关闭）
-  - **大模型**：任意 OpenAI 兼容接口（OpenAI、DeepSeek、Ollama、LM Studio…），流式输出；本地思考模型可“关闭思考”秒出结果；API Key 存于钥匙串
-- **贴图**：截图钉在屏幕最上层，滚轮缩放、⌥/⌘+滚轮调透明度、⌘R / ⇧⌘R 旋转、右键翻转，双击或 Esc 关闭
-- **历史记录**：最近 200 张截图，可按识别过的文字搜索
-- 全屏截图、贴图剪贴板、识别剪贴板图片 / 图片文件、可自定义全局快捷键、开机启动
+## Requirements
 
-## 默认快捷键
+- macOS 26 or later
+- Apple silicon or Intel Mac (universal binary)
+- To build from source: Xcode 26 or later (Swift 6 toolchain)
 
-| 操作 | 快捷键 |
+## Install
+
+1. Open the [latest release](https://github.com/WeaveNeuron/shocrot/releases/latest) on GitHub Releases. All versions are listed on the [Releases page](https://github.com/WeaveNeuron/shocrot/releases).
+2. Under **Assets**, download `Shocrot-<version>-macOS-universal.zip`. Optionally, also download the matching `.sha256` file and verify the download:
+
+   ```sh
+   cd ~/Downloads
+   shasum -a 256 -c Shocrot-<version>-macOS-universal.zip.sha256
+   ```
+
+3. Double-click the zip to unpack it, then drag **Shocrot.app** into your **Applications** folder.
+4. Open Shocrot from Applications. It runs in the menu bar, not the Dock, and opens a welcome window the first time.
+5. Click **Turn On** next to Screen Recording and allow Shocrot in **System Settings › Privacy & Security › Screen & System Audio Recording**, then restart Shocrot when asked.
+
+To update, quit Shocrot and replace the app in Applications with the new version.
+
+## Permissions
+
+| Permission | Needed for | Required |
+| --- | --- | --- |
+| Screen Recording | Screenshots, screen recording, text recognition and screenshot translation | Yes |
+| Accessibility | Translating selected text, and picking controls inside a window with the scroll wheel while capturing | Optional |
+
+Shocrot asks for Accessibility only when you first use a feature that needs it. Both permissions can be checked and granted later in Settings › General.
+
+## Shortcuts
+
+Global shortcuts (change them in Settings › Shortcuts):
+
+| Action | Shortcut |
 | --- | --- |
-| 区域截图 | ⌥⇧A |
-| 识别文字 | ⌥⇧T |
-| 全屏截图 | ⌥⇧F |
-| 贴图剪贴板 | ⌥⇧P |
-| 划词翻译 | ⌥⇧D |
-| 截图翻译 | ⌥⇧X |
-| 输入翻译 | ⌥⇧I |
+| Capture Area | ⌥⇧A |
+| Recognize Text (OCR) | ⌥⇧T |
+| Capture Full Screen | ⌥⇧F |
+| Pin Clipboard | ⌥⇧P |
+| Translate Selection | ⌥⇧D |
+| Translate Screenshot | ⌥⇧X |
+| Type to Translate | ⌥⇧I |
 
-截图时：↩ / ⌘C / 双击 复制，⌘S 保存，⇧⌘S 另存为，⌘T 识别文字，⌘D 翻译，⌘P 贴图，⌘L 滚动截图，⌘R 录屏，⌘Z 撤销，⌘A 全屏选区，Esc / 右键 取消。
+While capturing:
 
-## URL Scheme
+| Action | Shortcut |
+| --- | --- |
+| Copy and finish | ↩ / ⌘C / double-click |
+| Save / Save As | ⌘S / ⇧⌘S |
+| Recognize text / Translate / Pin | ⌘T / ⌘D / ⌘P |
+| Scrolling capture / Record screen | ⌘L / ⌘R |
+| Stop and save a recording | ⌃⌘⎋ |
+| Annotation tools | R O A P H M T N U |
+| Undo / Redo | ⌘Z / ⇧⌘Z |
+| Nudge the selection | Arrow keys (with ⇧ for 10×) |
+| Copy color / Select full screen | C / ⌘A |
+| Capture a single window | ⌥-click |
+| Cancel | Esc / right-click |
 
-`shocrot://capture`、`ocr`、`fullscreen`、`pin`、`ocr-clipboard`、`translate?text=…`、`translate-selection`、`translate-capture`、`history`、`settings`，可在快捷指令、Raycast、Alfred 中调用。
+## Automation
 
-## 命令行 OCR
+### URL scheme
+
+`shocrot://capture`, `ocr`, `fullscreen`, `pin`, `ocr-clipboard`, `translate?text=…`, `translate-selection`, `translate-capture`, `history` and `settings` can be called from Shortcuts, Raycast, Alfred or `open`:
+
+```sh
+open "shocrot://translate?text=Hello"
+```
+
+### Command-line OCR
 
 ```sh
 /Applications/Shocrot.app/Contents/MacOS/Shocrot --ocr image.png
 ```
 
-## 扩展
-
-- OCR 引擎：实现 `OCREngine`（`Sources/Shocrot/OCR/OCRService.swift`），赋值给 `OCRService.engine`
-- 翻译服务：实现 `TranslationService`（`Sources/Shocrot/Translate/TranslationService.swift`），加入 `TranslationServices.enabled`
-
-## 构建
+## Build from source
 
 ```sh
-scripts/build_app.sh            # 生成 build/Shocrot.app（通用二进制）
-scripts/build_app.sh --install  # 同时安装到 /Applications
+git clone https://github.com/WeaveNeuron/shocrot.git
+cd shocrot
+swift build        # debug build
+swift test         # unit tests
+scripts/build_app.sh            # build/Shocrot.app (release, universal)
+scripts/build_app.sh --install  # also install it to /Applications
 ```
 
-需要 macOS 26+、Xcode 26+。划词翻译需要“辅助功能”权限。首次使用需在“系统设置 › 隐私与安全性 › 录屏与系统录音”中允许 Shocrot，然后重启应用。构建时优先使用本地证书 `Shocrot Local Signing`（用 `scripts/make_local_cert.sh` 创建），重新构建后权限不会失效；没有证书时退回 ad-hoc 签名，每次重新构建后可能需要重新授权。
+`scripts/build_app.sh` options:
 
-版本号：`SHOCROT_VERSION=1.2.0 scripts/build_app.sh` 指定版本，默认取 `VERSION` 变量；构建号自动取 git 提交数。
+| Option | What it does |
+| --- | --- |
+| `--install` | Copies the app to /Applications (quits a running Shocrot first). |
+| `--package` | Writes `build/Shocrot-<version>-macOS-universal.zip` and its `.sha256`, ready to attach to a GitHub release. |
+| `--notarize` | Notarizes and staples the app (needs a Developer ID Application identity and a `notarytool` keychain profile), then packages it. |
+| `--adhoc` | Signs ad-hoc without any keychain lookup, for local checks and CI. |
 
-调试：`SHOCROT_DEMO_IMAGE=<png> .build/debug/Shocrot` 会用该图片模拟屏幕并自动进入截图（仅 Debug 构建），无需录屏权限即可调试覆盖层。
+The version comes from `SHOCROT_VERSION` (for example `SHOCROT_VERSION=1.2.0 scripts/build_app.sh --package`); the build number is the git commit count. The signing identity is chosen in this order: `SHOCROT_SIGN_IDENTITY`, a Developer ID Application certificate for `SHOCROT_TEAM_ID`, the self-signed `Shocrot Local Signing` certificate (create it with `scripts/make_local_cert.sh`), then ad-hoc. With a stable certificate, privacy permissions survive rebuilds; with ad-hoc signing you may need to grant them again after each build.
 
-本机 `swift build` / `swift test` 时，SwiftPM 会往用户的 TemporaryItems 写 `output-file-map.json`。沙箱若拒绝这次写入（EPERM），报错看起来像普通 I/O 错误，测试还没启动就停了。源码没有这个缺陷；放开 TemporaryItems 的写入后再跑即可。
+### Localization
+
+User-facing text lives in `Sources/Shocrot/Resources/<language>.lproj/Localizable.strings`, with `InfoPlist.strings` for Info.plist values. English (`en`) is the development language and the fallback; Simplified Chinese (`zh-Hans`) mirrors the same keys. In code, use `L("key")`, `L("key", args…)` or `L10n.plural("key", count)`. The tests check that every key the code uses exists in both languages and that translations keep the same format specifiers.
+
+### Development notes
+
+- Debug the capture overlay without the Screen Recording permission: `SHOCROT_DEMO_IMAGE=<png> .build/debug/Shocrot` uses the image as the screen and starts a capture (debug builds only).
+- Text recognition engine: implement `OCREngine` (`Sources/Shocrot/OCR/OCRService.swift`) and assign it to `OCRService.engine`.
+- Translation services: implement `TranslationService` (`Sources/Shocrot/Translate/TranslationService.swift`) and add it to `TranslationServices.enabled`.
+- `swift build` / `swift test` write `output-file-map.json` to your TemporaryItems folder. If a sandbox blocks that write (EPERM), the error looks like ordinary I/O and stops before the tests start; allow writes to TemporaryItems and run again.
 
 ## License
 
