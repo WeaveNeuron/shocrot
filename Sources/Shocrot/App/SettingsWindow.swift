@@ -154,6 +154,22 @@ private struct GeneralSettings: View {
                 Toggle(L("settings.general.showPreview"), isOn: $s.showPreview)
                 Toggle(L("settings.general.keepHistory"), isOn: $s.keepHistory)
             }
+            Section {
+                Picker(L("settings.language.picker"), selection: $s.appLanguage) {
+                    ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
+                }
+            } header: {
+                Text(L("settings.language"))
+            } footer: {
+                HStack {
+                    Text(L("settings.language.footer")).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    // The UI keeps the language it started with, so a different choice needs a restart.
+                    if s.appLanguage != L10n.launchChoice {
+                        Button(L("settings.language.restartNow"), action: Permission.relaunch).controlSize(.small)
+                    }
+                }
+            }
             Section(L("settings.general.screenshots")) {
                 Picker(L("settings.general.afterCapture"), selection: $s.afterCapture) {
                     ForEach(AfterCaptureAction.allCases) { Text($0.title).tag($0) }

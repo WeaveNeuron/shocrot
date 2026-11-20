@@ -192,6 +192,8 @@ final class Settings: ObservableObject {
     @Published var appleTranslateEnabled: Bool { didSet { d.set(appleTranslateEnabled, forKey: "appleTranslateEnabled") } }
     @Published var googleTranslateEnabled: Bool { didSet { d.set(googleTranslateEnabled, forKey: "googleTranslateEnabled") } }
     @Published var llm: LLMConfig { didSet { d.set(try? JSONEncoder().encode(llm), forKey: "llm") } }
+    /// UI language; applies from the next launch (see `L10n`).
+    @Published var appLanguage: AppLanguage { didSet { AppLanguage.store(appLanguage, in: d) } }
     @Published var launchAtLogin: Bool {
         didSet {
             // Writing the property back below runs this observer again (it is @Published); that pass only
@@ -263,6 +265,7 @@ final class Settings: ObservableObject {
         appleTranslateEnabled = d.object(forKey: "appleTranslateEnabled") as? Bool ?? true
         googleTranslateEnabled = d.bool(forKey: "googleTranslateEnabled")  // off: text would leave the Mac
         llm = d.data(forKey: "llm").flatMap { try? JSONDecoder().decode(LLMConfig.self, from: $0) } ?? LLMConfig()
+        appLanguage = AppLanguage.stored(in: d)
         launchAtLogin = Self.launchesAtLogin(SMAppService.mainApp.status)
     }
 }
