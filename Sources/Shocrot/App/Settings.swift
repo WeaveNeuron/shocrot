@@ -231,6 +231,30 @@ final class Settings: ObservableObject {
         ("de-DE", "Deutsch"), ("es-ES", "Español"), ("ru-RU", "Русский"),
     ]
 
+    /// The system's language list. Not `Locale.preferredLanguages`: once a UI language is picked in Settings, the
+    /// app's own AppleLanguages would make the translation defaults flip with it.
+    static var systemPreferredLanguages: [String] {
+        UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain)?["AppleLanguages"] as? [String]
+            ?? Locale.preferredLanguages
+    }
+
+    /// Translation languages for someone who hasn't chosen any: on a Chinese system (any zh-*) Chinese stays the
+    /// primary language and English the secondary one; on any other system foreign text is translated into
+    /// English, and English into Simplified Chinese.
+    static func defaultTranslationLanguages(systemPreferred: [String]) -> (primary: String, secondary: String) {
+        let first = systemPreferred.first.flatMap { Locale.Language(identifier: $0).languageCode?.identifier }
+        return first == "zh" ? ("zh-Hans", "en") : ("en", "zh-Hans")
+    }
+
+    /// Saved choices win. A half-saved pair is completed with the default that differs from the saved half.
+    static func translationLanguages(in d: UserDefaults, systemPreferred: [String]) -> (primary: String, secondary: String) {
+        let fallback = defaultTranslationLanguages(systemPreferred: systemPreferred)
+        let savedPrimary = d.string(forKey: "primaryLanguage"), savedSecondary = d.string(forKey: "secondaryLanguage")
+        let primary = savedPrimary ?? (savedSecondary == fallback.primary ? fallback.secondary : fallback.primary)
+        let secondary = savedSecondary ?? (primary == fallback.secondary ? fallback.primary : fallback.secondary)
+        return (primary, secondary)
+    }
+
     private init() {
         var keys: [HotKeyAction: HotKey] = [:]
         let raw = d.dictionary(forKey: "hotKeys") as? [String: Data] ?? [:]
@@ -260,8 +284,7 @@ final class Settings: ObservableObject {
         // Empty = let Vision detect the language, which reads both CJK and Latin text best.
         ocrLanguages = d.stringArray(forKey: "ocrLanguages") ?? []
         keepHistory = d.object(forKey: "keepHistory") as? Bool ?? true
-        primaryLanguage = d.string(forKey: "primaryLanguage") ?? "zh-Hans"
-        secondaryLanguage = d.string(forKey: "secondaryLanguage") ?? "en"
+        (primaryLanguage, secondaryLanguage) = Self.translationLanguages(in: d, systemPreferred: Self.systemPreferredLanguages)
         appleTranslateEnabled = d.object(forKey: "appleTranslateEnabled") as? Bool ?? true
         googleTranslateEnabled = d.bool(forKey: "googleTranslateEnabled")  // off: text would leave the Mac
         llm = d.data(forKey: "llm").flatMap { try? JSONDecoder().decode(LLMConfig.self, from: $0) } ?? LLMConfig()

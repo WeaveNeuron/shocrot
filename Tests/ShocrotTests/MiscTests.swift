@@ -37,6 +37,68 @@ struct LanguageTests {
     }
 }
 
+@Suite("Translation language defaults")
+struct TranslationLanguageDefaultsTests {
+    @Test func chineseSystemsKeepChineseAsThePrimaryLanguage() {
+        for system in [["zh-Hans-CN"], ["zh-Hans-US", "en-US"], ["zh-Hant-TW"], ["zh-HK"], ["zh-CN"], ["zh_CN"], ["zh"]] {
+            let pair = Settings.defaultTranslationLanguages(systemPreferred: system)
+            #expect(pair.primary == "zh-Hans" && pair.secondary == "en", "\(system)")
+        }
+    }
+
+    /// An English (or any other non-Chinese) system translates into English out of the box, never into Chinese.
+    @Test func otherSystemsTranslateIntoEnglish() {
+        for system in [["en-US"], ["en-GB", "zh-Hans-CN"], ["ja-JP"], ["fr-FR", "zh-Hans"], ["de"], []] {
+            let pair = Settings.defaultTranslationLanguages(systemPreferred: system)
+            #expect(pair.primary == "en" && pair.secondary == "zh-Hans", "\(system)")
+        }
+        // Foreign text goes to English, English goes to Chinese.
+        let pair = Settings.defaultTranslationLanguages(systemPreferred: ["en-US"])
+        #expect(pair.primary != pair.secondary)
+    }
+
+    private func withDefaults(_ body: (UserDefaults) -> Void) throws {
+        let suite = "com.weaveneuron.shocrot.tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        body(defaults)
+    }
+
+    @Test func newUsersGetTheSystemDefault() throws {
+        try withDefaults { d in
+            #expect(Settings.translationLanguages(in: d, systemPreferred: ["en-US"]) == ("en", "zh-Hans"))
+            #expect(Settings.translationLanguages(in: d, systemPreferred: ["zh-Hans-CN"]) == ("zh-Hans", "en"))
+        }
+    }
+
+    @Test func savedChoicesAreKeptWhateverTheSystemLanguage() throws {
+        try withDefaults { d in
+            d.set("zh-Hans", forKey: "primaryLanguage")
+            d.set("en", forKey: "secondaryLanguage")
+            #expect(Settings.translationLanguages(in: d, systemPreferred: ["en-US"]) == ("zh-Hans", "en"))
+            d.set("ja", forKey: "primaryLanguage")
+            d.set("ko", forKey: "secondaryLanguage")
+            #expect(Settings.translationLanguages(in: d, systemPreferred: ["zh-Hans-CN"]) == ("ja", "ko"))
+        }
+    }
+
+    /// Only one half saved: the other half comes from the defaults without repeating the saved language.
+    @Test func aHalfSavedPairStaysAPair() throws {
+        try withDefaults { d in
+            d.set("zh-Hans", forKey: "primaryLanguage")
+            #expect(Settings.translationLanguages(in: d, systemPreferred: ["en-US"]) == ("zh-Hans", "en"))
+        }
+        try withDefaults { d in
+            d.set("en", forKey: "secondaryLanguage")
+            #expect(Settings.translationLanguages(in: d, systemPreferred: ["en-US"]) == ("zh-Hans", "en"))
+        }
+        try withDefaults { d in
+            d.set("ja", forKey: "primaryLanguage")
+            #expect(Settings.translationLanguages(in: d, systemPreferred: ["en-US"]) == ("ja", "zh-Hans"))
+        }
+    }
+}
+
 @Suite("Pinned text")
 struct PinnedTextTests {
     @Test func shortTextMakesACompactCard() throws {
