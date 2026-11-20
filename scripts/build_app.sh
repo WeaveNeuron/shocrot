@@ -8,6 +8,8 @@
 #   --install   copy the app to /Applications (quits a running Shocrot first)
 #
 # Environment: SHOCROT_VERSION (default 1.0.0), SHOCROT_SIGN_IDENTITY, SHOCROT_TEAM_ID, SHOCROT_NOTARY_PROFILE.
+# Build flags remap $PWD to '.' so object/debug paths do not embed /Users/... ; the
+# assembled .app (and packaged zip/dmg) is rejected if any Mach-O still contains /Users/.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -34,8 +36,54 @@ LOCALIZATIONS=(en zh-Hans)   # Sources/Shocrot/Resources/<lang>.lproj; en is the
 ZIP="build/Shocrot-${VERSION}-macOS-universal.zip"
 DMG="build/Shocrot-${VERSION}-macOS-universal.dmg"
 
-swift build -c release --arch arm64 --arch x86_64
-BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/Shocrot"
+# Rewrite the repo absolute path in object/debug info so the binary does not
+# embed a home directory (e.g. /Users/...). $PWD is resolved after the cd above.
+ROOT="$(pwd -P)"
+LOGICAL="$(pwd)"
+PREFIX_MAP_FLAGS=()
+add_prefix_maps() {
+  local src="$1"
+  [[ -n "$src" ]] || return 0
+  PREFIX_MAP_FLAGS+=(
+    -Xswiftc -file-prefix-map -Xswiftc "${src}=."
+    -Xswiftc -debug-prefix-map -Xswiftc "${src}=."
+    -Xcc "-ffile-prefix-map=${src}=."
+  )
+  if [[ "$src" != */ ]]; then
+    PREFIX_MAP_FLAGS+=(
+      -Xswiftc -file-prefix-map -Xswiftc "${src}/=./"
+      -Xswiftc -debug-prefix-map -Xswiftc "${src}/=./"
+      -Xcc "-ffile-prefix-map=${src}/=./"
+    )
+  fi
+}
+add_prefix_maps "$ROOT"
+[[ "$LOGICAL" != "$ROOT" ]] && add_prefix_maps "$LOGICAL"
+# Strip the same prefix from linker OSO (object file) debug-map entries.
+PREFIX_MAP_FLAGS+=(-Xlinker -oso_prefix -Xlinker "$ROOT")
+[[ "$LOGICAL" != "$ROOT" ]] && PREFIX_MAP_FLAGS+=(-Xlinker -oso_prefix -Xlinker "$LOGICAL")
+
+# Refuse to sign or notarize if any Mach-O in the app still embeds /Users/.
+assert_no_user_paths() {
+  local app="$1"
+  local leaked=0 f
+  while IFS= read -r -d '' f; do
+    lipo -info "$f" >/dev/null 2>&1 || continue
+    if strings -a "$f" | grep -F '/Users/' >/dev/null; then
+      echo "Embedded /Users/ path found in $f:" >&2
+      strings -a "$f" | grep -F '/Users/' | sort -u >&2
+      leaked=1
+    fi
+  done < <(find "$app" -type f -print0)
+  if (( leaked )); then
+    echo "Refusing to sign or notarize: $app still contains /Users/ paths." >&2
+    exit 1
+  fi
+  echo "No /Users/ paths in Mach-O binaries under $app"
+}
+
+swift build -c release --arch arm64 --arch x86_64 "${PREFIX_MAP_FLAGS[@]}"
+BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path "${PREFIX_MAP_FLAGS[@]}")/Shocrot"
 ARCHS="$(lipo -archs "$BIN")"
 if [[ " $ARCHS " != *" arm64 "* || " $ARCHS " != *" x86_64 "* ]]; then
   echo "Expected a universal binary (arm64 + x86_64), got: $ARCHS" >&2
@@ -104,6 +152,8 @@ cat > "$APP/Contents/Info.plist" <<EOF
 </plist>
 EOF
 plutil -lint -s "$APP/Contents/Info.plist"
+
+assert_no_user_paths "$APP"
 
 # Signing identity, in order of preference:
 #   1. $SHOCROT_SIGN_IDENTITY ("-" or --adhoc: ad-hoc, no keychain access at all)
@@ -180,6 +230,25 @@ if (( PACKAGE )); then
   (cd "$(dirname "$DMG")" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
   echo "Packaged $DMG"
   echo "SHA-256:  $(cut -d' ' -f1 "$DMG.sha256")  (also in $DMG.sha256)"
+
+  # Re-check the archives users actually download.
+  VERIFY_DIR="$(mktemp -d)"
+  VERIFY_MNT="$(mktemp -d)"
+  cleanup_verify() {
+    hdiutil detach "$VERIFY_MNT" >/dev/null 2>&1 || true
+    rm -rf "$VERIFY_DIR" "$VERIFY_MNT"
+  }
+  trap cleanup_verify EXIT
+  ditto -xk "$ZIP" "$VERIFY_DIR"
+  assert_no_user_paths "$VERIFY_DIR/Shocrot.app"
+  if ! hdiutil attach -nobrowse -readonly -mountpoint "$VERIFY_MNT" "$DMG" >/dev/null; then
+    echo "Could not attach $DMG to check for /Users/ paths." >&2
+    exit 1
+  fi
+  assert_no_user_paths "$VERIFY_MNT/Shocrot.app"
+  hdiutil detach "$VERIFY_MNT" >/dev/null
+  trap - EXIT
+  cleanup_verify
 
   if [[ "$SIGN" != "Developer ID Application:"* ]] || (( ! NOTARIZE )); then
     echo "Note: these archives are not notarized; Gatekeeper blocks them on other Macs. Release builds use --notarize." >&2
