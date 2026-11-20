@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// The system permissions Shocrot uses, with live status and a guided way to grant them.

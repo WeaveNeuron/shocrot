@@ -234,7 +234,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         TranslatePanel.dismissUnpinned()
         CapturePreview.close(animated: false)
         isPreparingCapture = true
-        Task { @MainActor in
+        Task { @MainActor [self] in
             defer { isPreparingCapture = false }
             do {
                 // The window list for snapping is read off the main thread while the screens are captured.
