@@ -6,6 +6,7 @@ cd "$(dirname "$0")/.."
 VERSION="${SHOCROT_VERSION:-1.0.0}"
 BUILD="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 APP="build/Shocrot.app"
+LOCALIZATIONS=(en zh-Hans)   # Sources/Shocrot/Resources/<lang>.lproj; en is the development language
 
 swift build -c release --arch arm64 --arch x86_64
 BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/Shocrot"
@@ -28,6 +29,18 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Shocrot"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
+# Localizations: copied from the source tree (SwiftPM's own bundle lowercases "zh-Hans.lproj").
+for lang in "${LOCALIZATIONS[@]}"; do
+  src="Sources/Shocrot/Resources/${lang}.lproj"
+  for table in Localizable InfoPlist; do
+    if [[ ! -f "$src/$table.strings" ]]; then echo "Missing $src/$table.strings" >&2; exit 1; fi
+    plutil -lint -s "$src/$table.strings"
+  done
+  ditto "$src" "$APP/Contents/Resources/${lang}.lproj"
+done
+LOCALIZATION_ITEMS="$(printf '<string>%s</string>' "${LOCALIZATIONS[@]}")"
+
+# Default (English) values; <lang>.lproj/InfoPlist.strings localizes them.
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -41,7 +54,8 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${BUILD}</string>
-  <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array>${LOCALIZATION_ITEMS}</array>
   <key>LSMinimumSystemVersion</key><string>26.0</string>
   <key>LSUIElement</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
@@ -54,10 +68,11 @@ cat > "$APP/Contents/Info.plist" <<EOF
   </dict></array>
   <key>NSAppTransportSecurity</key>
   <dict><key>NSAllowsLocalNetworking</key><true/></dict>
-  <key>NSScreenCaptureUsageDescription</key><string>Shocrot 需要截取屏幕内容来完成截图和文字识别。</string>
+  <key>NSScreenCaptureUsageDescription</key><string>Shocrot needs to capture your screen to take screenshots and recognize text.</string>
 </dict>
 </plist>
 EOF
+plutil -lint -s "$APP/Contents/Info.plist"
 
 # Signing identity, in order of preference:
 #   1. $SHOCROT_SIGN_IDENTITY
