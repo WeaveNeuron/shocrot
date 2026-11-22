@@ -71,7 +71,11 @@ struct TranslateView: View {
             Spacer()
             IconButton(symbol: model.pinned ? "pin.fill" : "pin", help: model.pinned ? L("translate.unpin") : L("translate.pin"),
                        active: model.pinned) { model.pinned.toggle() }
-            IconButton(symbol: "gearshape", help: L("translate.settings")) { SettingsWindow.show(tab: .translate) }
+            IconButton(symbol: "gearshape", help: L("translate.settings")) {
+                // The floating panel would cover Settings; a pinned one stays where the user wants it.
+                if !model.pinned { onClose() }
+                SettingsWindow.show(tab: .translate)
+            }
             IconButton(symbol: "xmark", help: L("common.closeEsc"), action: onClose)
         }
         .frame(height: 22)
