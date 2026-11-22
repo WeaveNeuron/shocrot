@@ -39,6 +39,28 @@ enum WindowPlacement {
         return f
     }
 
+    /// Where `frame` has to go to be fully visible: inside the visible frame of the display showing most of it
+    /// (`fallback` when it is on none), inset by `margin`. With `canShrink` a frame larger than that area is cut
+    /// down to it, keeping its top left; otherwise, as in `fit`, the top left wins.
+    static func onScreen(_ frame: CGRect, screens: [(frame: CGRect, visible: CGRect)], fallback: CGRect?,
+                         canShrink: Bool = false, margin: CGFloat = margin) -> CGRect {
+        guard let visible = index(for: frame, among: screens.map(\.frame)).map({ screens[$0].visible }) ?? fallback
+        else { return frame }
+        var f = frame
+        if canShrink {
+            let b = visible.insetBy(dx: margin, dy: margin)
+            let top = f.maxY
+            f.size = CGSize(width: min(f.width, b.width), height: min(f.height, b.height))
+            f.origin.y = top - f.height
+        }
+        return fit(f, in: visible, margin: margin)
+    }
+
+    /// The tallest a window may be to fit inside `visible` with the usual margin.
+    static func maxHeight(in visible: CGRect, margin: CGFloat = margin) -> CGFloat {
+        max(0, visible.height - 2 * margin)
+    }
+
     /// Top-left corner for a window of `size` next to `anchor` (a selection, or a point as a zero-size rect),
     /// tried in order: below it, above it, right of it, left of it. When none fits (a large or full-screen
     /// selection), it goes centred in the upper part of `bounds`. The result always lies inside `bounds`.

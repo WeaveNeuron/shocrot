@@ -18,6 +18,8 @@ final class TranslateModel: ObservableObject {
     @Published var pinned = false
     /// Screenshot translation shows the panel right away while OCR is still running.
     @Published var isRecognizing = false
+    /// The tallest the panel may get: its display's visible height less margins. Set by `TranslatePanel`.
+    @Published var maxPanelHeight: CGFloat = .greatestFiniteMagnitude
     @Published private(set) var detected: Language?
     @Published private(set) var resolvedTarget: Language?
     @Published private(set) var results: [ServiceResult] = []

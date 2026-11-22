@@ -39,6 +39,9 @@ final class OCRModel: ObservableObject {
 
 enum OCRWindow {
     private static var windows: [NSWindow] = []
+    /// One per open window: pulls it back inside its display after a drag or resize past an edge.
+    private static var keepers: [ObjectIdentifier: OnScreenKeeper] = [:]
+    private static let preferredMinSize = CGSize(width: 620, height: 380)
 
     static func show(model: OCRModel) {
         let host = NSHostingController(rootView: OCRView(model: model))
@@ -49,9 +52,14 @@ enum OCRWindow {
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.minSize = CGSize(width: 620, height: 380)
-        window.setFrame(initialFrame(for: window), display: false)
+        let frame = initialFrame(for: window)
+        // A display smaller than the usual minimum still gets a window that fits it.
+        window.minSize = CGSize(width: min(preferredMinSize.width, frame.width),
+                                height: min(preferredMinSize.height, frame.height))
+        window.setFrame(frame, display: false)
         windows.append(window)
+        let id = ObjectIdentifier(window)
+        keepers[id] = MainActor.assumeIsolated { OnScreenKeeper(window: window, canShrink: true) }
         // The observer goes with the window: left registered, its block would keep the window, the model
         // and the whole capture alive after closing.
         var observer: NSObjectProtocol?
@@ -60,6 +68,7 @@ enum OCRWindow {
             if let observer { NotificationCenter.default.removeObserver(observer) }
             observer = nil
             windows.removeAll { $0 === window }
+            keepers[id] = nil
             FocusReturn.windowDidGoAway()
         }
         NSApp.activate()

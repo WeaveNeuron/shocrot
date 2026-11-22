@@ -1,0 +1,75 @@
+import AppKit
+
+/// Keeps a window inside the visible frame of the display it is on (menu bar and Dock excluded): after its
+/// content resizes it, and once a drag that moved it ends. Nothing moves while the mouse button is down, so the
+/// window never fights the user's drag or live resize; it settles as soon as the button is released.
+@MainActor
+final class OnScreenKeeper {
+    private weak var window: NSWindow?
+    private let canShrink: Bool
+    private let fallbackScreen: () -> NSScreen?
+    private var observers: [NSObjectProtocol] = []
+    private var pending: Task<Void, Never>?
+    /// Full screen (and its transition) fills the whole display, menu bar area included: leave it alone.
+    private var inFullScreen = false
+
+    /// `canShrink`: a window larger than the display is cut down to it (resizable windows); otherwise its top
+    /// left stays in view. `fallbackScreen`: the display to use while the window is on none.
+    init(window: NSWindow, canShrink: Bool = false,
+         fallbackScreen: @escaping () -> NSScreen? = { WindowPlacement.mouseScreen }) {
+        self.window = window
+        self.canShrink = canShrink
+        self.fallbackScreen = fallbackScreen
+        for name in [NSWindow.didResizeNotification, NSWindow.didMoveNotification] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) {
+                [weak self] _ in
+                MainActor.assumeIsolated { self?.keep() }
+            })
+        }
+        observers.append(NotificationCenter.default.addObserver(forName: NSWindow.willEnterFullScreenNotification,
+                                                                object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.inFullScreen = true }
+        })
+        observers.append(NotificationCenter.default.addObserver(forName: NSWindow.didExitFullScreenNotification,
+                                                                object: window, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.inFullScreen = false
+                self?.keep()
+            }
+        })
+    }
+
+    isolated deinit {
+        pending?.cancel()
+        observers.forEach(NotificationCenter.default.removeObserver)
+    }
+
+    /// Pulls the window back now, or right after the mouse button is released if it is down (a drag or live
+    /// resize in progress).
+    func keep() {
+        pending?.cancel()
+        pending = nil
+        guard NSEvent.pressedMouseButtons & 1 != 0 else { pullBack(); return }
+        pending = Task { @MainActor [weak self] in
+            while NSEvent.pressedMouseButtons & 1 != 0 {
+                try? await Task.sleep(for: .milliseconds(80))
+                if Task.isCancelled { return }
+            }
+            self?.pullBack()
+        }
+    }
+
+    private func pullBack() {
+        guard let window, window.isVisible, !window.isMiniaturized, !inFullScreen,
+              !window.styleMask.contains(.fullScreen) else { return }
+        let screens = NSScreen.screens.map { (frame: $0.frame, visible: $0.visibleFrame) }
+        let fitted = WindowPlacement.onScreen(window.frame, screens: screens, fallback: fallbackScreen()?.visibleFrame,
+                                              canShrink: canShrink)
+        guard fitted != window.frame else { return }
+        if fitted.size == window.frame.size {
+            window.setFrameOrigin(fitted.origin)
+        } else {
+            window.setFrame(fitted, display: true)
+        }
+    }
+}

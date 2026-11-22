@@ -10,13 +10,18 @@ struct TranslateView: View {
     @FocusState private var inputFocused: Bool
     @State private var inputSelection: TextSelection?
     @State private var resultsHeight: CGFloat = 0
+    @State private var chromeHeight: CGFloat = 0
+    @State private var inputTextHeight: CGFloat = 0
     @State private var downloadRequest: TranslationSession.Configuration?
 
     var body: some View {
-        VStack(spacing: 10) {
-            header
-            inputCard
-            languageBar
+        VStack(spacing: TranslatePanelLayout.spacing) {
+            VStack(spacing: TranslatePanelLayout.spacing) {
+                header
+                inputCard
+                languageBar
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chromeHeight = $0 }
             if !model.results.isEmpty || model.definition != nil || !model.hasServices {
                 ScrollView {
                     VStack(spacing: 8) {
@@ -27,12 +32,14 @@ struct TranslateView: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { resultsHeight = $0 }
                 }
                 .scrollIndicators(.never)
-                .frame(height: min(resultsHeight, 460))
+                // Capped so the whole panel fits its display; the rest scrolls.
+                .frame(height: TranslatePanelLayout.resultsHeight(content: resultsHeight, chrome: chromeHeight,
+                                                                  maxPanelHeight: model.maxPanelHeight))
             }
         }
         .padding(.horizontal, 12)
-        .padding(.bottom, 12)
-        .padding(.top, 10)
+        .padding(.bottom, TranslatePanelLayout.bottomPadding)
+        .padding(.top, TranslatePanelLayout.topPadding)
         .frame(width: 420)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.primary.opacity(0.1), lineWidth: 0.5))
@@ -108,13 +115,6 @@ struct TranslateView: View {
                         .padding(.top, 1)
                         .allowsHitTesting(false)
                 }
-                // TextEditor has no intrinsic height; a hidden copy of the text sizes it to fit.
-                Text(model.input + " ")
-                    .font(.system(size: 14))
-                    .padding(.horizontal, 5)
-                    .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 140, alignment: .topLeading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .hidden()
                 TextEditor(text: $model.input, selection: $inputSelection)
                     .font(.system(size: 14))
                     .scrollContentBackground(.hidden)
@@ -124,6 +124,19 @@ struct TranslateView: View {
                         model.translate()
                         return .handled
                     }
+            }
+            // The editor's own ideal height is its whole text (a full-screen OCR made the panel 1800 pt tall), so
+            // it gets a fixed height instead: a hidden copy of the text measures it, capped; longer text scrolls.
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(height: TranslatePanelLayout.inputHeight(natural: inputTextHeight))
+            .background(alignment: .topLeading) {
+                Text(model.input + " ")
+                    .font(.system(size: 14))
+                    .padding(.horizontal, 5)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .hidden()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { inputTextHeight = $0 }
             }
             HStack(spacing: 2) {
                 if let detected = model.detected {
