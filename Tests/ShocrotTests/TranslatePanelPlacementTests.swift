@@ -64,3 +64,36 @@ struct TranslatePanelPlacementTests {
         #expect(side(CGRect(x: 0, y: 70, width: 1920, height: 980)) == .centred)
     }
 }
+
+/// Live QA (build 118): after a 742 pt translation, a selection with room for 420 pt below got a panel pushed up
+/// over it, because the window was still 742 pt tall when it was pulled on screen. The planned frame, which the
+/// window now takes, fits the display wherever it goes, so pulling it on screen moves nothing.
+@MainActor
+struct TranslatePanelPlannedFrameTests {
+    let visible = CGRect(x: 0, y: 90, width: 1920, height: 960)  // menu bar 30, Dock 90
+    let displays: [WindowPlacement.Display] = [(CGRect(x: 0, y: 0, width: 1920, height: 1080),
+                                                CGRect(x: 0, y: 90, width: 1920, height: 960))]
+
+    @Test func theReportedSelectionGetsThePanelBelowIt() {
+        // Screen y 440…500 (top-left origin) on a 1080 pt display, at the left edge.
+        let anchor = CGRect(x: 6, y: 580, width: 214, height: 60)
+        let p = TranslatePanel.placement(width: 420, near: anchor, in: visible)
+        #expect(p.frame.maxY == anchor.minY - 12)
+        #expect(p.frame.minX == WindowPlacement.margin)
+        #expect(p.frame.height == TranslatePanel.plannedHeight)
+        #expect(!p.frame.intersects(anchor))
+        #expect(WindowPlacement.onScreen(p.frame, screens: displays, fallback: nil) == p.frame)
+    }
+
+    @Test func thePlannedFrameAlwaysFitsSoThePullBackMovesNothing() {
+        let anchors = [CGRect(x: 6, y: 580, width: 214, height: 60), CGRect(x: 1700, y: 1030, width: 200, height: 20),
+                       CGRect(x: 1250, y: 120, width: 210, height: 30), CGRect(x: 0, y: 90, width: 1920, height: 960),
+                       CGRect(x: 900, y: 500, width: 0, height: 0)]
+        for anchor in anchors + [CGRect.null] {
+            let p = TranslatePanel.placement(width: 420, near: anchor.isNull ? nil : anchor, in: visible)
+            #expect(WindowPlacement.onScreen(p.frame, screens: displays, fallback: nil) == p.frame, "\(anchor)")
+            #expect(p.frame.origin.x == p.topLeft.x && p.frame.maxY == p.topLeft.y)
+            if let bottom = p.keptBottom { #expect(p.frame.minY == bottom) }
+        }
+    }
+}

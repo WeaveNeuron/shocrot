@@ -158,25 +158,28 @@ final class TranslatePanel: NSPanel, HeaderDraggable {
         model.maxPanelHeight = WindowPlacement.maxHeight(in: vf)
         let placement = Self.placement(width: frame.width, near: anchor, in: vf)
         keptBottom = placement.keptBottom
-        if let bottom = placement.keptBottom {
-            setFrameOrigin(CGPoint(x: placement.topLeft.x, y: bottom))
-        } else {
-            setFrameTopLeftPoint(placement.topLeft)
-        }
-        // Its current height can differ from the planned one (taller from a previous translation).
+        // The window takes the planned frame itself, not just its position: it is still as tall as the previous
+        // translation left it (the content shrinks a moment later), and pulled on screen at that height it
+        // would be pushed up over the selection and stay there. From the planned frame the content resizes it,
+        // keeping the top (or, above the selection, the bottom) in place.
+        setFrame(placement.frame, display: false)
         keeper?.pullBackNow()
     }
 
     /// Where a panel `width` wide goes when placed next to `anchor` (centred without one) inside `visible`.
     /// It is planned at `plannedHeight` (capped to the display), never at its current height, which is left
     /// over from the previous translation. Above the anchor it is placed by its bottom edge (`keptBottom`), which
-    /// then stays put while the content changes height.
+    /// then stays put while the content changes height. `frame` is the planned frame, which always fits `visible`.
     static func placement(width: CGFloat, near anchor: CGRect?, in visible: CGRect)
-        -> (topLeft: CGPoint, keptBottom: CGFloat?) {
+        -> (topLeft: CGPoint, keptBottom: CGFloat?, frame: CGRect) {
         let size = CGSize(width: width, height: min(plannedHeight, WindowPlacement.maxHeight(in: visible)))
-        guard let anchor else { return (WindowPlacement.centeredTopLeft(for: size, in: visible), nil) }
+        func frame(_ topLeft: CGPoint) -> CGRect { CGRect(origin: CGPoint(x: topLeft.x, y: topLeft.y - size.height), size: size) }
+        guard let anchor else {
+            let topLeft = WindowPlacement.centeredTopLeft(for: size, in: visible)
+            return (topLeft, nil, frame(topLeft))
+        }
         let p = WindowPlacement.placement(for: size, beside: anchor, in: visible)
-        return (p.topLeft, p.side == .above ? p.topLeft.y - size.height : nil)
+        return (p.topLeft, p.side == .above ? p.topLeft.y - size.height : nil, frame(p.topLeft))
     }
 
     private func restoreKeptBottom() {
