@@ -53,6 +53,21 @@ struct WindowPlacementTests {
         #expect(f.minX >= selection.maxX)
     }
 
+    /// A tall selection under a Dock on the left: right of it is the place, but no further left than the Dock.
+    @Test func panelBesideASelectionUnderASideDockStaysOutOfTheDock() {
+        let visible = CGRect(x: 70, y: 0, width: 1442, height: 949)
+        let selection = CGRect(x: 0, y: 20, width: 50, height: 900)
+        let f = frame(WindowPlacement.topLeft(for: panel, beside: selection, in: visible), panel)
+        #expect(inside(f, visible))
+        #expect(f.minX >= selection.maxX)
+        // The same on the right, for the left-of placement.
+        let rightVisible = CGRect(x: 0, y: 0, width: 1442, height: 949)
+        let rightSelection = CGRect(x: 1462, y: 20, width: 50, height: 900)
+        let g = frame(WindowPlacement.topLeft(for: panel, beside: rightSelection, in: rightVisible), panel)
+        #expect(inside(g, rightVisible))
+        #expect(g.maxX <= rightSelection.minX)
+    }
+
     @Test func fullScreenSelectionCentresThePanelOnThatDisplay() {
         let visible = CGRect(x: 1512, y: 74, width: 1920, height: 1017)
         let f = frame(WindowPlacement.topLeft(for: panel, beside: external, in: visible), panel)

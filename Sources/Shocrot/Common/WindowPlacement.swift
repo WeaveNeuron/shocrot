@@ -86,10 +86,10 @@ enum WindowPlacement {
             return CGPoint(x: x(anchor.minX), y: top(anchor.maxY + gap + h))
         }
         if anchor.maxX + gap + w <= b.maxX {
-            return CGPoint(x: anchor.maxX + gap, y: top(anchor.maxY))
+            return CGPoint(x: x(anchor.maxX + gap), y: top(anchor.maxY))
         }
         if anchor.minX - gap - w >= b.minX {
-            return CGPoint(x: anchor.minX - gap - w, y: top(anchor.maxY))
+            return CGPoint(x: x(anchor.minX - gap - w), y: top(anchor.maxY))
         }
         return centeredTopLeft(for: size, in: bounds, margin: margin)
     }
