@@ -72,7 +72,7 @@ final class TranslatePanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
-        // SwiftUI content never lets a background drag move the window; the header carries a WindowDragGesture.
+        // SwiftUI content never lets a background drag move the window; the header moves it (HeaderDragHandle).
         isMovableByWindowBackground = false
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]

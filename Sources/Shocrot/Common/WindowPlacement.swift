@@ -64,6 +64,21 @@ enum WindowPlacement {
         return fit(f, in: visible, margin: margin)
     }
 
+    /// Where a window of `size` goes while its own header drags it: it follows the pointer from where the drag
+    /// started, except that its top stays below the menu bar (inside the visible frame, less `margin`) of the
+    /// display under the pointer. Left, right and bottom are left free: the window may hang past them while the
+    /// drag goes on and is pulled back once it ends (`OnScreenKeeper`).
+    static func draggedOrigin(start: CGPoint, mouseDown: CGPoint, mouse: CGPoint, size: CGSize,
+                              displays: [Display], margin: CGFloat = margin) -> CGPoint {
+        var origin = CGPoint(x: start.x + mouse.x - mouseDown.x, y: start.y + mouse.y - mouseDown.y)
+        let pointer = CGRect(origin: mouse, size: .zero)
+        if let i = index(for: pointer, among: displays.map(\.frame)) {
+            let top = displays[i].visible.maxY - margin
+            if origin.y + size.height > top { origin.y = top - size.height }
+        }
+        return origin
+    }
+
     /// The tallest a window may be to fit inside `visible` with the usual margin.
     static func maxHeight(in visible: CGRect, margin: CGFloat = margin) -> CGFloat {
         max(0, visible.height - 2 * margin)

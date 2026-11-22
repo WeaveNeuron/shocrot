@@ -74,9 +74,8 @@ struct TranslateView: View {
         }
         .frame(height: 22)
         // The header is the panel's title bar: drag it to move the borderless panel. The buttons keep their clicks.
-        .contentShape(Rectangle())
-        .gesture(WindowDragGesture())
-        .allowsWindowActivationEvents(true)
+        // Not `WindowDragGesture`: dropped in the menu bar, a system drag tiles the panel to the screen centre.
+        .background { HeaderDragHandle() }
     }
 
     private func copyFirstResult() {
