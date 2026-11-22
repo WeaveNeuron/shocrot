@@ -16,6 +16,8 @@ final class TranslatePanel: NSPanel {
     private var clickMonitors: [Any] = []
     /// The display chosen when the panel was placed; used while the panel is not on any display yet.
     private weak var placementScreen: NSScreen?
+    /// What the panel was last placed next to.
+    private var placedAnchor: CGRect?
     private var keeper: OnScreenKeeper?
 
     /// `anchor`: what the panel belongs to, in AppKit global coordinates: the captured area, or a point
@@ -24,7 +26,7 @@ final class TranslatePanel: NSPanel {
     static func show(text: String? = nil, near anchor: CGRect? = nil) {
         let panel = shared ?? TranslatePanel()
         shared = panel
-        if !panel.isVisible || !panel.model.pinned { panel.place(near: anchor) }
+        if panel.needsPlacing(near: anchor) { panel.place(near: anchor) }
         panel.orderFrontRegardless()
         panel.makeKey()
         panel.watchOutsideClicks()
@@ -45,7 +47,7 @@ final class TranslatePanel: NSPanel {
         shared = panel
         panel.model.clear()
         panel.model.isRecognizing = true
-        if !panel.isVisible || !panel.model.pinned { panel.place(near: anchor) }
+        if panel.needsPlacing(near: anchor) { panel.place(near: anchor) }
         panel.orderFrontRegardless()
         panel.watchOutsideClicks()
     }
@@ -123,12 +125,21 @@ final class TranslatePanel: NSPanel {
         close()
     }
 
+    /// A hidden panel is placed; a pinned one stays where it is. So does one still showing for the same anchor:
+    /// a screenshot translation shows the panel while OCR runs, then again with the text, and the user may have
+    /// moved it in between.
+    private func needsPlacing(near anchor: CGRect?) -> Bool {
+        guard isVisible else { return true }
+        return !model.pinned && (anchor == nil || anchor != placedAnchor)
+    }
+
     /// Next to the anchor (below, above, beside) on the display that shows it, else centred in the upper part of
     /// the display under the pointer; always inside that display's visible frame.
     private func place(near anchor: CGRect?) {
         let screen = anchor.flatMap(WindowPlacement.screen(for:)) ?? WindowPlacement.mouseScreen
         guard let screen else { return }
         placementScreen = screen
+        placedAnchor = anchor
         let vf = screen.visibleFrame
         model.maxPanelHeight = WindowPlacement.maxHeight(in: vf)
         let size = CGSize(width: frame.width, height: min(max(frame.height, Self.plannedHeight), model.maxPanelHeight))
