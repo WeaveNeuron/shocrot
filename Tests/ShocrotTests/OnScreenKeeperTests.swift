@@ -90,6 +90,23 @@ struct OnScreenKeeperTests {
         withExtendedLifetime(keeper) {}
     }
 
+    /// Every step of a drag moves the window; it settles from where the drag ends, and so does the next drag.
+    @Test func eachDragSettlesFromWhereItEnds() async {
+        let world = World()
+        let window = makeWindow(CGRect(x: 300, y: 300, width: 420, height: 400))
+        let keeper = makeKeeper(window, world)
+        for _ in 0..<2 {
+            world.mouseDown = true
+            for x in stride(from: 300.0, through: -400, by: -50) { window.setFrameOrigin(CGPoint(x: x, y: 300)) }
+            window.setFrameOrigin(CGPoint(x: -400, y: -300)) // released past the bottom left corner
+            try? await Task.sleep(for: .milliseconds(150))
+            #expect(window.frame.origin == CGPoint(x: -400, y: -300))
+            world.mouseDown = false
+            #expect(await eventually { window.frame.origin == CGPoint(x: m, y: m) })
+        }
+        withExtendedLifetime(keeper) {}
+    }
+
     @Test func aWindowDraggedMostlyOntoTheSecondDisplayIsKeptThere() async {
         let world = World()
         let window = makeWindow(CGRect(x: 300, y: 300, width: 420, height: 400))

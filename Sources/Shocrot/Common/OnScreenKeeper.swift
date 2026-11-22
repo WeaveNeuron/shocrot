@@ -60,15 +60,22 @@ final class OnScreenKeeper {
     /// Pulls the window back now, or right after the mouse button is released if it is down (a drag or live
     /// resize in progress).
     func keep() {
-        pending?.cancel()
-        pending = nil
-        guard isMouseDown() else { pullBack(); return }
+        guard isMouseDown() else {
+            pending?.cancel()
+            pending = nil
+            pullBack()
+            return
+        }
+        // A drag posts a move for every step: one wait for the release covers them all, since the pull-back
+        // reads the frame the window has by then.
+        guard pending == nil else { return }
         let isMouseDown = isMouseDown
         pending = Task { @MainActor [weak self] in
             while isMouseDown() {
                 try? await Task.sleep(for: .milliseconds(80))
                 if Task.isCancelled { return }
             }
+            self?.pending = nil
             self?.pullBack()
         }
     }
