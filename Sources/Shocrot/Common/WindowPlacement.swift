@@ -89,24 +89,33 @@ enum WindowPlacement {
     /// selection), it goes centred in the upper part of `bounds`. The result always lies inside `bounds`.
     static func topLeft(for size: CGSize, beside anchor: CGRect, in bounds: CGRect, gap: CGFloat = 12,
                         margin: CGFloat = margin) -> CGPoint {
+        placement(for: size, beside: anchor, in: bounds, gap: gap, margin: margin).topLeft
+    }
+
+    /// Which side of its anchor `topLeft(for:beside:in:)` put a window.
+    enum Side { case below, above, right, left, centred }
+
+    /// `topLeft(for:beside:in:)`, also saying which side of the anchor it chose.
+    static func placement(for size: CGSize, beside anchor: CGRect, in bounds: CGRect, gap: CGFloat = 12,
+                          margin: CGFloat = margin) -> (topLeft: CGPoint, side: Side) {
         let b = bounds.insetBy(dx: margin, dy: margin)
         let w = size.width, h = size.height
         func x(_ value: CGFloat) -> CGFloat { max(b.minX, min(value, b.maxX - w)) }
         func top(_ value: CGFloat) -> CGFloat { min(b.maxY, max(value, b.minY + h)) }
 
         if anchor.minY - gap - h >= b.minY {
-            return CGPoint(x: x(anchor.minX), y: top(anchor.minY - gap))
+            return (CGPoint(x: x(anchor.minX), y: top(anchor.minY - gap)), .below)
         }
         if anchor.maxY + gap + h <= b.maxY {
-            return CGPoint(x: x(anchor.minX), y: top(anchor.maxY + gap + h))
+            return (CGPoint(x: x(anchor.minX), y: top(anchor.maxY + gap + h)), .above)
         }
         if anchor.maxX + gap + w <= b.maxX {
-            return CGPoint(x: x(anchor.maxX + gap), y: top(anchor.maxY))
+            return (CGPoint(x: x(anchor.maxX + gap), y: top(anchor.maxY)), .right)
         }
         if anchor.minX - gap - w >= b.minX {
-            return CGPoint(x: x(anchor.minX - gap - w), y: top(anchor.maxY))
+            return (CGPoint(x: x(anchor.minX - gap - w), y: top(anchor.maxY)), .left)
         }
-        return centeredTopLeft(for: size, in: bounds, margin: margin)
+        return (centeredTopLeft(for: size, in: bounds, margin: margin), .centred)
     }
 
     /// Horizontally centred, in the upper part of `bounds`: where a panel opened without an anchor goes.

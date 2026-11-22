@@ -5,7 +5,7 @@ import SwiftUI
 /// It never activates the app, and closes on a click outside unless pinned.
 /// Its header is the drag handle. The panel stays inside the visible area of its display: its content is capped
 /// to that height (long text scrolls), and it is pulled back on screen when its content grows or a drag ends.
-final class TranslatePanel: NSPanel {
+final class TranslatePanel: NSPanel, HeaderDraggable {
     private static var shared: TranslatePanel?
 
     /// Height planned for when placing the panel: it opens small ("recognizing") and grows as results arrive,
@@ -18,6 +18,9 @@ final class TranslatePanel: NSPanel {
     private weak var placementScreen: NSScreen?
     /// What the panel was last placed next to.
     private var placedAnchor: CGRect?
+    /// Placed above its anchor, the panel keeps its bottom edge there as its content grows or shrinks, so it
+    /// stays next to the selection; nil once the user drags it, or when placed anywhere else.
+    private var keptBottom: CGFloat?
     private var keeper: OnScreenKeeper?
 
     /// `anchor`: what the panel belongs to, in AppKit global coordinates: the captured area, or a point
@@ -81,6 +84,11 @@ final class TranslatePanel: NSPanel {
         let host = NSHostingController(rootView: TranslateView(model: model) { [weak self] in self?.close() })
         host.sizingOptions = [.preferredContentSize]
         contentViewController = host
+        // Before the keeper's own observer, so the keeper checks the frame with the bottom already back in place.
+        NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: self, queue: .main) {
+            [weak self] _ in
+            MainActor.assumeIsolated { self?.restoreKeptBottom() }
+        }
         // The hosting controller resizes the window with its content, keeping the top left fixed, and the header
         // drag can leave it past an edge: pull it back inside the display after either (after the drag ends).
         keeper = OnScreenKeeper(window: self) { [weak self] in
@@ -97,6 +105,8 @@ final class TranslatePanel: NSPanel {
     }
 
     override var canBecomeKey: Bool { true }
+
+    func headerDragDidBegin() { keptBottom = nil }
 
     override func cancelOperation(_ sender: Any?) { close() }
 
@@ -142,12 +152,32 @@ final class TranslatePanel: NSPanel {
         placedAnchor = anchor
         let vf = screen.visibleFrame
         model.maxPanelHeight = WindowPlacement.maxHeight(in: vf)
-        let size = CGSize(width: frame.width, height: min(max(frame.height, Self.plannedHeight), model.maxPanelHeight))
-        let topLeft = anchor.map { WindowPlacement.topLeft(for: size, beside: $0, in: vf) }
-            ?? WindowPlacement.centeredTopLeft(for: size, in: vf)
-        setFrameTopLeftPoint(topLeft)
+        let placement = Self.placement(width: frame.width, near: anchor, in: vf)
+        keptBottom = placement.keptBottom
+        if let bottom = placement.keptBottom {
+            setFrameOrigin(CGPoint(x: placement.topLeft.x, y: bottom))
+        } else {
+            setFrameTopLeftPoint(placement.topLeft)
+        }
         // Its current height can differ from the planned one (taller from a previous translation).
         keeper?.pullBackNow()
+    }
+
+    /// Where a panel `width` wide goes when placed next to `anchor` (centred without one) inside `visible`.
+    /// It is planned at `plannedHeight` (capped to the display), never at its current height, which is left
+    /// over from the previous translation. Above the anchor it is placed by its bottom edge (`keptBottom`), which
+    /// then stays put while the content changes height.
+    static func placement(width: CGFloat, near anchor: CGRect?, in visible: CGRect)
+        -> (topLeft: CGPoint, keptBottom: CGFloat?) {
+        let size = CGSize(width: width, height: min(plannedHeight, WindowPlacement.maxHeight(in: visible)))
+        guard let anchor else { return (WindowPlacement.centeredTopLeft(for: size, in: visible), nil) }
+        let p = WindowPlacement.placement(for: size, beside: anchor, in: visible)
+        return (p.topLeft, p.side == .above ? p.topLeft.y - size.height : nil)
+    }
+
+    private func restoreKeptBottom() {
+        guard let keptBottom, frame.minY != keptBottom else { return }
+        setFrameOrigin(CGPoint(x: frame.minX, y: keptBottom))
     }
 
     /// The display the panel was placed on, while it is still connected: an unplugged one can linger with its
