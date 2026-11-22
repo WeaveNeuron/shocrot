@@ -81,7 +81,9 @@ final class TranslatePanel: NSPanel {
         contentViewController = host
         // The hosting controller resizes the window with its content, keeping the top left fixed, and the header
         // drag can leave it past an edge: pull it back inside the display after either (after the drag ends).
-        keeper = OnScreenKeeper(window: self) { [weak self] in self?.placementScreen ?? WindowPlacement.mouseScreen }
+        keeper = OnScreenKeeper(window: self) { [weak self] in
+            (self?.placementScreen ?? WindowPlacement.mouseScreen)?.visibleFrame
+        }
         // Dragged to another display: cap the content to that display's height.
         NotificationCenter.default.addObserver(forName: NSWindow.didChangeScreenNotification, object: self,
                                                queue: .main) { [weak self] _ in

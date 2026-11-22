@@ -7,19 +7,26 @@ import AppKit
 final class OnScreenKeeper {
     private weak var window: NSWindow?
     private let canShrink: Bool
-    private let fallbackScreen: () -> NSScreen?
+    private let fallback: () -> CGRect?
+    private let screens: () -> [WindowPlacement.Display]
+    private let isMouseDown: () -> Bool
     private var observers: [NSObjectProtocol] = []
     private var pending: Task<Void, Never>?
     /// Full screen (and its transition) fills the whole display, menu bar area included: leave it alone.
     private var inFullScreen = false
 
     /// `canShrink`: a window larger than the display is cut down to it (resizable windows); otherwise its top
-    /// left stays in view. `fallbackScreen`: the display to use while the window is on none.
+    /// left stays in view. `fallback`: the visible frame to use while the window is on no display.
+    /// `screens` and `isMouseDown` read the live displays and left mouse button unless given.
     init(window: NSWindow, canShrink: Bool = false,
-         fallbackScreen: @escaping () -> NSScreen? = { WindowPlacement.mouseScreen }) {
+         fallback: @escaping () -> CGRect? = { WindowPlacement.mouseScreen?.visibleFrame },
+         screens: @escaping () -> [WindowPlacement.Display] = { WindowPlacement.displays },
+         isMouseDown: @escaping () -> Bool = { NSEvent.pressedMouseButtons & 1 != 0 }) {
         self.window = window
         self.canShrink = canShrink
-        self.fallbackScreen = fallbackScreen
+        self.fallback = fallback
+        self.screens = screens
+        self.isMouseDown = isMouseDown
         for name in [NSWindow.didResizeNotification, NSWindow.didMoveNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) {
                 [weak self] _ in
@@ -49,9 +56,10 @@ final class OnScreenKeeper {
     func keep() {
         pending?.cancel()
         pending = nil
-        guard NSEvent.pressedMouseButtons & 1 != 0 else { pullBack(); return }
+        guard isMouseDown() else { pullBack(); return }
+        let isMouseDown = isMouseDown
         pending = Task { @MainActor [weak self] in
-            while NSEvent.pressedMouseButtons & 1 != 0 {
+            while isMouseDown() {
                 try? await Task.sleep(for: .milliseconds(80))
                 if Task.isCancelled { return }
             }
@@ -62,8 +70,7 @@ final class OnScreenKeeper {
     private func pullBack() {
         guard let window, window.isVisible, !window.isMiniaturized, !inFullScreen,
               !window.styleMask.contains(.fullScreen) else { return }
-        let screens = NSScreen.screens.map { (frame: $0.frame, visible: $0.visibleFrame) }
-        let fitted = WindowPlacement.onScreen(window.frame, screens: screens, fallback: fallbackScreen()?.visibleFrame,
+        let fitted = WindowPlacement.onScreen(window.frame, screens: screens(), fallback: fallback(),
                                               canShrink: canShrink)
         guard fitted != window.frame else { return }
         if fitted.size == window.frame.size {

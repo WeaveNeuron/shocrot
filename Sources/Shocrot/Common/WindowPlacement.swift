@@ -5,6 +5,14 @@ import AppKit
 enum WindowPlacement {
     static let margin: CGFloat = 8
 
+    /// A display's full frame and its visible frame (menu bar and Dock excluded).
+    typealias Display = (frame: CGRect, visible: CGRect)
+
+    /// The connected displays, now.
+    static var displays: [Display] {
+        NSScreen.screens.map { (frame: $0.frame, visible: $0.visibleFrame) }
+    }
+
     /// The display showing most of `rect`; for a point-sized rect (or one between displays), the one whose frame
     /// holds its origin, edges included.
     static func screen(for rect: CGRect) -> NSScreen? {
@@ -42,7 +50,7 @@ enum WindowPlacement {
     /// Where `frame` has to go to be fully visible: inside the visible frame of the display showing most of it
     /// (`fallback` when it is on none), inset by `margin`. With `canShrink` a frame larger than that area is cut
     /// down to it, keeping its top left; otherwise, as in `fit`, the top left wins.
-    static func onScreen(_ frame: CGRect, screens: [(frame: CGRect, visible: CGRect)], fallback: CGRect?,
+    static func onScreen(_ frame: CGRect, screens: [Display], fallback: CGRect?,
                          canShrink: Bool = false, margin: CGFloat = margin) -> CGRect {
         guard let visible = index(for: frame, among: screens.map(\.frame)).map({ screens[$0].visible }) ?? fallback
         else { return frame }
