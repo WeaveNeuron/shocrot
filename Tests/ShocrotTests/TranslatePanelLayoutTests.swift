@@ -103,3 +103,12 @@ struct LanguageMenuTitleTests {
         }
     }
 }
+
+struct SpeakButtonLabelTests {
+    /// The label used to stay "Read Aloud" while the button showed a stop symbol.
+    @Test func theLabelFollowsTheState() {
+        #expect(speakHelp(speaking: false) == L("translate.speak"))
+        #expect(speakHelp(speaking: true) == L("translate.stopSpeaking"))
+        #expect(speakHelp(speaking: true) != speakHelp(speaking: false))
+    }
+}

@@ -156,7 +156,8 @@ struct TranslateView: View {
                     Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
-                IconButton(symbol: speaker.speakingID == "input" ? "stop.fill" : "speaker.wave.2", help: L("translate.speak")) {
+                IconButton(symbol: speaker.speakingID == "input" ? "stop.fill" : "speaker.wave.2",
+                           help: speakHelp(speaking: speaker.speakingID == "input")) {
                     speaker.toggle(model.input, language: model.detected ?? model.resolvedSource, id: "input")
                 }
                 .disabled(model.input.isEmpty)
@@ -293,7 +294,8 @@ private struct ResultCard: View {
                 if result.isLoading {
                     ProgressView().controlSize(.mini)
                 } else if result.error == nil {
-                    IconButton(symbol: speaker.speakingID == "r\(result.id)" ? "stop.fill" : "speaker.wave.2", help: L("translate.speak")) {
+                    IconButton(symbol: speaker.speakingID == "r\(result.id)" ? "stop.fill" : "speaker.wave.2",
+                               help: speakHelp(speaking: speaker.speakingID == "r\(result.id)")) {
                         speaker.toggle(result.text, language: language, id: "r\(result.id)")
                     }
                     IconButton(symbol: copied ? "checkmark" : "doc.on.doc", help: L("translate.copyTranslation")) {
@@ -371,6 +373,11 @@ private struct DefinitionCard: View {
         .padding(10)
         .card()
     }
+}
+
+/// The read-aloud button's tooltip and VoiceOver label: it turns into a stop button while reading.
+func speakHelp(speaking: Bool) -> String {
+    speaking ? L("translate.stopSpeaking") : L("translate.speak")
 }
 
 struct IconButton: View {

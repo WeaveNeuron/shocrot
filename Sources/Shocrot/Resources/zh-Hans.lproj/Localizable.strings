@@ -320,6 +320,7 @@
 "translate.detected" = "检测到 %@";
 "translate.sourceLooksLike" = "%1$@ · 看起来是%2$@";
 "translate.speak" = "朗读";
+"translate.stopSpeaking" = "停止朗读";
 "translate.copySource" = "复制原文";
 "translate.clear" = "清空";
 "translate.autoDetect" = "自动检测";
