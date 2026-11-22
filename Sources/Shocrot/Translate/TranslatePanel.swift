@@ -3,17 +3,26 @@ import SwiftUI
 
 /// The single floating translation window used by input, selection and screenshot translation.
 /// It never activates the app, and closes on a click outside unless pinned.
+/// Its header is the drag handle; the panel stays inside the visible area of its display as its content grows.
 final class TranslatePanel: NSPanel {
     private static var shared: TranslatePanel?
 
+    /// Height planned for when placing the panel: it opens small ("recognizing") and grows as results arrive,
+    /// so placing it by its current height alone would leave the results running off the screen.
+    static let plannedHeight: CGFloat = 420
+
     let model = TranslateModel()
     private var clickMonitors: [Any] = []
+    /// The display chosen when the panel was placed; used while the panel is not on any display yet.
+    private weak var placementScreen: NSScreen?
 
+    /// `anchor`: what the panel belongs to, in AppKit global coordinates: the captured area, or a point
+    /// (zero-size rect) for a text selection. Without one the panel goes centred on the display under the pointer.
     @MainActor
-    static func show(text: String? = nil, near point: CGPoint? = nil) {
+    static func show(text: String? = nil, near anchor: CGRect? = nil) {
         let panel = shared ?? TranslatePanel()
         shared = panel
-        if !panel.isVisible || !panel.model.pinned { panel.place(near: point) }
+        if !panel.isVisible || !panel.model.pinned { panel.place(near: anchor) }
         panel.orderFrontRegardless()
         panel.makeKey()
         panel.watchOutsideClicks()
@@ -29,12 +38,12 @@ final class TranslatePanel: NSPanel {
 
     /// Opens the panel immediately in a "recognizing" state; follow up with `show(text:near:)`.
     @MainActor
-    static func showRecognizing(near point: CGPoint?) {
+    static func showRecognizing(near anchor: CGRect?) {
         let panel = shared ?? TranslatePanel()
         shared = panel
         panel.model.clear()
         panel.model.isRecognizing = true
-        if !panel.isVisible || !panel.model.pinned { panel.place(near: point) }
+        if !panel.isVisible || !panel.model.pinned { panel.place(near: anchor) }
         panel.orderFrontRegardless()
         panel.watchOutsideClicks()
     }
@@ -59,14 +68,21 @@ final class TranslatePanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
-        isMovableByWindowBackground = true
+        // SwiftUI content never lets a background drag move the window; the header carries a WindowDragGesture.
+        isMovableByWindowBackground = false
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
-        let host = NSHostingController(rootView: TranslateView(model: model))
+        let host = NSHostingController(rootView: TranslateView(model: model) { [weak self] in self?.close() })
         host.sizingOptions = [.preferredContentSize]
         contentViewController = host
+        // The hosting controller resizes the window with its content, keeping the top left fixed; pull it back
+        // inside the display whenever that makes it run past an edge.
+        NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: self,
+                                               queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.keepOnScreen() }
+        }
     }
 
     override var canBecomeKey: Bool { true }
@@ -98,21 +114,27 @@ final class TranslatePanel: NSPanel {
         close()
     }
 
-    /// Below the cursor for selections, otherwise in the upper third of the active screen.
-    private func place(near point: CGPoint?) {
-        let mouse = point ?? NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens[0]
+    /// Next to the anchor (below, above, beside) on the display that shows it, else centred in the upper part of
+    /// the display under the pointer; always inside that display's visible frame.
+    private func place(near anchor: CGRect?) {
+        let screen = anchor.flatMap(WindowPlacement.screen(for:)) ?? WindowPlacement.mouseScreen
+        guard let screen else { return }
+        placementScreen = screen
         let vf = screen.visibleFrame
-        let size = CGSize(width: 420, height: max(frame.height, 200))
-        var origin: CGPoint
-        if let point {
-            origin = CGPoint(x: point.x - 40, y: point.y - 16 - size.height)
-        } else {
-            origin = CGPoint(x: vf.midX - size.width / 2, y: vf.maxY - vf.height * 0.18 - size.height)
-        }
-        origin.x = min(max(origin.x, vf.minX + 8), vf.maxX - size.width - 8)
-        origin.y = min(max(origin.y, vf.minY + 8), vf.maxY - size.height - 8)
-        setFrameTopLeftPoint(CGPoint(x: origin.x, y: origin.y + size.height))
+        let size = CGSize(width: frame.width, height: min(max(frame.height, Self.plannedHeight), vf.height))
+        let topLeft = anchor.map { WindowPlacement.topLeft(for: size, beside: $0, in: vf) }
+            ?? WindowPlacement.centeredTopLeft(for: size, in: vf)
+        setFrameTopLeftPoint(topLeft)
+        keepOnScreen()
+    }
+
+    /// Moves the panel back inside the visible frame of the display it is on (the one it was placed on while it
+    /// is on none); a panel taller than the display keeps its header in view.
+    private func keepOnScreen() {
+        guard let screen = WindowPlacement.screen(for: frame) ?? placementScreen ?? WindowPlacement.mouseScreen
+        else { return }
+        let fitted = WindowPlacement.fit(frame, in: screen.visibleFrame)
+        if fitted.origin != frame.origin { setFrameOrigin(fitted.origin) }
     }
 }
 

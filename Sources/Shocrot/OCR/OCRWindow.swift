@@ -49,10 +49,8 @@ enum OCRWindow {
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.setContentSize(CGSize(width: 880, height: 540))
         window.minSize = CGSize(width: 620, height: 380)
-        window.center()
-        if let last = windows.last { window.setFrameTopLeftPoint(CGPoint(x: last.frame.minX + 24, y: last.frame.maxY - 24)) }
+        window.setFrame(initialFrame(for: window), display: false)
         windows.append(window)
         // The observer goes with the window: left registered, its block would keep the window, the model
         // and the whole capture alive after closing.
@@ -66,6 +64,25 @@ enum OCRWindow {
         }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
+    }
+
+    /// Centred on the display under the pointer (where the capture or the History window is), not wherever
+    /// `center()` would put a new window; a further window cascades from the last one on that display.
+    /// Always inside the display's visible frame, so the title bar can be reached and dragged.
+    private static func initialFrame(for window: NSWindow) -> CGRect {
+        let preferred = CGSize(width: 880, height: 540)
+        guard let vf = WindowPlacement.mouseScreen?.visibleFrame else {
+            return CGRect(origin: window.frame.origin, size: preferred)
+        }
+        let inset = WindowPlacement.margin
+        let size = CGSize(width: min(preferred.width, vf.width - 2 * inset),
+                          height: min(preferred.height, vf.height - 2 * inset))
+        var frame = CGRect(x: vf.midX - size.width / 2, y: vf.midY - size.height / 2,
+                           width: size.width, height: size.height)
+        if let last = windows.last(where: { vf.intersects($0.frame) }) {
+            frame.origin = CGPoint(x: last.frame.minX + 24, y: last.frame.maxY - 24 - size.height)
+        }
+        return WindowPlacement.fit(frame, in: vf)
     }
 }
 

@@ -4,6 +4,8 @@ import Translation
 
 struct TranslateView: View {
     @ObservedObject var model: TranslateModel
+    /// Closes the panel itself; `NSApp.keyWindow` may be another window (a pinned image, Settings) or none.
+    let onClose: () -> Void
     @ObservedObject private var speaker = Speaker.shared
     @FocusState private var inputFocused: Bool
     @State private var inputSelection: TextSelection?
@@ -61,9 +63,13 @@ struct TranslateView: View {
             IconButton(symbol: model.pinned ? "pin.fill" : "pin", help: model.pinned ? L("translate.unpin") : L("translate.pin"),
                        active: model.pinned) { model.pinned.toggle() }
             IconButton(symbol: "gearshape", help: L("translate.settings")) { SettingsWindow.show(tab: .translate) }
-            IconButton(symbol: "xmark", help: L("common.closeEsc")) { NSApp.keyWindow?.close() }
+            IconButton(symbol: "xmark", help: L("common.closeEsc"), action: onClose)
         }
         .frame(height: 22)
+        // The header is the panel's title bar: drag it to move the borderless panel. The buttons keep their clicks.
+        .contentShape(Rectangle())
+        .gesture(WindowDragGesture())
+        .allowsWindowActivationEvents(true)
     }
 
     private func copyFirstResult() {
