@@ -128,3 +128,66 @@ GIF 帧率 / 最大宽度 / 不放大 / 时长读取、60 秒阈值、设置可�
 - 从卡片点“翻译”时，应用按设置里启用的大模型引擎发起了翻译（本机接口未连上，显示“无法连接服务器”），这一步应用会
   按正常流程向钥匙串取该接口的 API Key。我没有读取钥匙串，也没看到 Key；应用每次启动迁移旧 Key 时同样会访问钥匙串。
 - 没有实机验证贴图旋转 / 翻转后的识别（只是对两张图做同样的变换，代码审查确认）。
+
+---
+
+# 翻译面板修复交接（2026-11-22，分支 fix/translate-panel-position）
+
+起点 `ba4ec22`（0.1.0 build 111 的验收版）。本轮 8 个提交，只在本地，**没有 push**，main 没动。
+
+## 做了什么
+
+| 提交 | 内容 | 测试 |
+| --- | --- | --- |
+| `cc74525` | **主 bug：面板拖进菜单栏松手后跳到水平居中。** 根因已用 WindowManager 日志证实是系统窗口平铺：`WindowDragGesture` 把拖动交给系统，拖到菜单栏触发「拖到菜单栏填满屏幕」（日志 `Add Tiled Window (hotzoneDrag) … fill`），定尺寸面板被居中。改为标题栏自己移动窗口（`Common/HeaderDragView.swift`），x 跟指针，顶部限制在指针所在显示器的菜单栏下方（`WindowPlacement.draggedOrigin`），其他边松手后照旧由 OnScreenKeeper 拉回。 | `TranslatePanelDragTests` |
+| `0d2871e` | 放置按计划高度 420 pt（不超出显示器），不再用上一次面板的高度；放在选区上方时保持底边离选区 12 pt，直到用户拖动。 | `TranslatePanelPlacementTests` |
+| `5128952` | 互换语言按 Apple 翻译 / DeepL 惯例：译文进输入框，「检测 / 自动」保持自动，固定语言互换；无可互换内容时按钮禁用。06c 的源语言标签：检测本身没错，是上一次互换把源固定成中文后标签显示了所选源；现在 `detected` 只放检测结果，所选源与原文不符时显示「中文（简体）· 看起来是英文」。 | `TranslateModelSwapTests`（桩服务） |
+| `fe8d883` | 语言菜单：自动时只显示解析出的语言加小标记（不再截断），完整文字放在提示和 VoiceOver；当前项打勾；隐藏「上下箭头」无障碍元素。 | `LanguageMenuTitleTests` |
+| `3a66b43` | 输入框超出高度上限时底部渐隐；识别 / 选中带入的文字光标在开头，长文显示开头。 | 布局测试 |
+| `e92d75c` | 朗读按钮朗读中的提示和无障碍标签为「停止朗读」。 | `SpeakButtonLabelTests` |
+| `787b665` | 齿轮按钮：未固定的面板先关闭，不再盖住设置窗口。 | — |
+| `21c8938` | **签名版实测发现**：高面板之后的新选区，面板被推到选区上方盖住它（放置时窗口仍是上一次的 742 pt，被拉回屏幕时上移）。放置时窗口直接取计划 frame。 | `TranslatePanelPlannedFrameTests` |
+
+`swift test`：161 → 191 个测试，全部通过，每个提交前都跑过。
+
+## build 119 与备份
+
+- 已安装：`/Applications/Shocrot.app` = 0.1.0 (build 119)，Developer ID 签名（hardened runtime），**未公证**（本机可运行，其他 Mac 的 Gatekeeper 会拦）。构建命令：`SHOCROT_VERSION=0.1.0 scripts/build_app.sh --install`。屏幕录制授权保留。
+- 备份：`~/Backups/Shocrot-v0.1.0-pre-fix-111.app`，用 `ditto` 复制，与原 /Applications 版本逐字节相同，签名校验通过（0.1.0 build 111）。
+
+## 怎么回滚
+
+应用：
+
+```sh
+osascript -e 'tell application id "com.weaveneuron.shocrot" to quit'
+rm -rf /Applications/Shocrot.app
+ditto ~/Backups/Shocrot-v0.1.0-pre-fix-111.app /Applications/Shocrot.app
+open /Applications/Shocrot.app
+```
+
+代码：本轮提交都在 `ba4ec22` 之后，可以逐个 `git revert <提交>`，或整条分支不合并。单独撤掉 `cc74525` 会让菜单栏平铺 bug 回来。
+
+## 实机验收（截图在本机 `~/Downloads/cua/shocrot-fix-111/`，不在仓库）
+
+已测通过：菜单栏松手保持 x（ad-hoc 118 与签名 119 都测，日志里没有平铺、没有系统拖动）；拖出左 / 右 / Dock 边缘后拉回；识别过程中拖动、识别完不被拽回；识别文字从开头显示并有底部渐隐；高面板后靠左边缘的选区面板在下方；靠 Dock 的选区面板在上方且底边留 12 pt；菜单栏时钟（右边缘）选区；互换保留检测 / 自动；菜单标题不截断、当前项打勾（只看到「自动」项）；朗读标签切换；固定按钮首次点击；齿轮关面板开设置。
+
+## 没测的项
+
+- 多显示器、显示器变化（原清单 4、5）：本机只有一台显示器，不改显示器设置。只有单元测试。
+- 固定语言项上的打勾、「看起来是 X」标签：cua-driver 无法在打开的 SwiftUI 菜单里选项。只有单元测试。
+- 选中文字翻译（⌥⇧D）的放置：没测。
+
+## 剩下的问题
+
+- 输入框滚到底时最后一行仍有渐隐。
+- 很短的英文标题会被系统语言识别成印尼语 / 土耳其语（本轮未改）。
+- 系统通知横幅会盖住右上角面板的标题栏（系统界面）。
+- 未修（按约定）：Apple 下载语言弹窗比面板宽；滚动条无障碍标签；OCR 慢。
+- 未公证。
+
+## 推送前必须做
+
+- **扫密钥**：`git diff main...fix/translate-panel-position` 和新增文件里查 key / token / secret / password / Bearer、证书和 `.p12` / `.env` 之类；确认没有 notarytool 凭据、API Key。
+- **扫隐私**：确认 diff 和 notes 里没有个人路径（`/Users/…`）、邮箱、真实姓名、本机其他应用或对话内容；验收截图含本机私人窗口内容，**不要**放进仓库或 PR。构建脚本自带的 Mach-O `/Users/` 路径检查已通过，但只覆盖二进制。
+- 确认后再 push 和开 PR；要发布还得 `--notarize`。
