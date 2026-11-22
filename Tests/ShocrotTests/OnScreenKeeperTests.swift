@@ -128,6 +128,33 @@ struct OnScreenKeeperTests {
         withExtendedLifetime(keeper) {}
     }
 
+    // MARK: Displays changing under a window that does not move
+
+    private func postDisplaysChanged() {
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    }
+
+    @Test func unpluggingTheDisplayAWindowIsOnBringsItToTheFallback() async {
+        let world = World()
+        let window = makeWindow(CGRect(x: 2000, y: 400, width: 420, height: 400))
+        let keeper = makeKeeper(window, world)
+        world.screens = [Self.laptop]
+        postDisplaysChanged()
+        #expect(await eventually { inside(window.frame, Self.laptop.visible) })
+        withExtendedLifetime(keeper) {}
+    }
+
+    @Test func aDockGrowingOverAWindowPushesItUp() async {
+        let world = World()
+        let window = makeWindow(CGRect(x: 300, y: 20, width: 420, height: 400))
+        let keeper = makeKeeper(window, world)
+        let shrunk = CGRect(x: 0, y: 120, width: 1512, height: 829) // a 120 pt Dock along the bottom
+        world.screens = [(Self.laptop.frame, shrunk), Self.external]
+        postDisplaysChanged()
+        #expect(await eventually { inside(window.frame, shrunk) })
+        withExtendedLifetime(keeper) {}
+    }
+
     /// Released with its window (the OCR window drops it on close), the keeper stops reacting: nothing is left
     /// observing the window.
     @Test func aReleasedKeeperNoLongerMovesTheWindow() async {

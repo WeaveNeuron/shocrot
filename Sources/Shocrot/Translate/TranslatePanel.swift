@@ -82,12 +82,15 @@ final class TranslatePanel: NSPanel {
         // The hosting controller resizes the window with its content, keeping the top left fixed, and the header
         // drag can leave it past an edge: pull it back inside the display after either (after the drag ends).
         keeper = OnScreenKeeper(window: self) { [weak self] in
-            (self?.placementScreen ?? WindowPlacement.mouseScreen)?.visibleFrame
+            (self?.connectedPlacementScreen ?? WindowPlacement.mouseScreen)?.visibleFrame
         }
-        // Dragged to another display: cap the content to that display's height.
-        NotificationCenter.default.addObserver(forName: NSWindow.didChangeScreenNotification, object: self,
-                                               queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.updateHeightLimit() }
+        // Dragged to another display, or the display itself changed (resolution, Dock, unplugged): cap the
+        // content to the height the panel's display has now.
+        for (name, object) in [(NSWindow.didChangeScreenNotification, self as AnyObject?),
+                               (NSApplication.didChangeScreenParametersNotification, nil)] {
+            NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateHeightLimit() }
+            }
         }
     }
 
@@ -139,13 +142,19 @@ final class TranslatePanel: NSPanel {
     /// is on none).
     private func keepOnScreen() {
         let screens = NSScreen.screens.map { (frame: $0.frame, visible: $0.visibleFrame) }
-        let fallback = (placementScreen ?? WindowPlacement.mouseScreen)?.visibleFrame
+        let fallback = (connectedPlacementScreen ?? WindowPlacement.mouseScreen)?.visibleFrame
         let fitted = WindowPlacement.onScreen(frame, screens: screens, fallback: fallback)
         if fitted.origin != frame.origin { setFrameOrigin(fitted.origin) }
     }
 
+    /// The display the panel was placed on, while it is still connected: an unplugged one can linger with its
+    /// old frame.
+    private var connectedPlacementScreen: NSScreen? {
+        placementScreen.flatMap { placed in NSScreen.screens.contains { $0 === placed } ? placed : nil }
+    }
+
     private func updateHeightLimit() {
-        guard let screen = self.screen ?? placementScreen else { return }
+        guard let screen = self.screen ?? connectedPlacementScreen else { return }
         let limit = WindowPlacement.maxHeight(in: screen.visibleFrame)
         if model.maxPanelHeight != limit { model.maxPanelHeight = limit }
     }

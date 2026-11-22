@@ -1,7 +1,8 @@
 import AppKit
 
 /// Keeps a window inside the visible frame of the display it is on (menu bar and Dock excluded): after its
-/// content resizes it, and once a drag that moved it ends. Nothing moves while the mouse button is down, so the
+/// content resizes it, once a drag that moved it ends, and when the displays change (one unplugged, a new
+/// resolution, the Dock resized or moved). Nothing moves while the mouse button is down, so the
 /// window never fights the user's drag or live resize; it settles as soon as the button is released.
 @MainActor
 final class OnScreenKeeper {
@@ -33,6 +34,11 @@ final class OnScreenKeeper {
                 MainActor.assumeIsolated { self?.keep() }
             })
         }
+        // Posted by NSApp; the window itself may not move, e.g. when the Dock grows over it.
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.keep() }
+        })
         observers.append(NotificationCenter.default.addObserver(forName: NSWindow.willEnterFullScreenNotification,
                                                                 object: window, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.inFullScreen = true }
