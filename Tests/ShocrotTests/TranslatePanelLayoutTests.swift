@@ -20,6 +20,15 @@ struct TranslatePanelLayoutTests {
         #expect(L.inputHeight(natural: 90) == 90)
     }
 
+    /// The fade hinting at more text below shows exactly when the text is cut off by the cap.
+    @Test func onlyCappedInputFades() {
+        #expect(L.inputOverflows(natural: 1300))
+        #expect(L.inputOverflows(natural: L.inputMaxHeight + 1))
+        #expect(!L.inputOverflows(natural: L.inputMaxHeight))
+        #expect(!L.inputOverflows(natural: 20))
+        #expect(L.inputFadeHeight < L.inputMinHeight / 2)
+    }
+
     @Test func fullScreenTranslationFitsTheDisplay() {
         let maxPanel = WindowPlacement.maxHeight(in: laptopVisible)
         let results = L.resultsHeight(content: 2400, chrome: tallestChrome, maxPanelHeight: maxPanel)

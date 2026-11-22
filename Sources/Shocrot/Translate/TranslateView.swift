@@ -53,9 +53,11 @@ struct TranslateView: View {
             // ⇧⌘C copies the first finished translation, like the OCR window's copy shortcut.
             Button("") { copyFirstResult() }.keyboardShortcut("c", modifiers: [.command, .shift]).hidden()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .focusTranslateInput)) { _ in
-            // New text: caret at the end rather than a stale selection from the previous query.
-            inputSelection = TextSelection(insertionPoint: model.input.endIndex)
+        .onReceive(NotificationCenter.default.publisher(for: .focusTranslateInput)) { note in
+            // New text: a fresh caret rather than a stale selection from the previous query. At the start for
+            // recognized or selected text, so a long text shows its beginning rather than its end.
+            let atStart = note.userInfo?[TranslatePanel.caretAtStartKey] as? Bool == true
+            inputSelection = TextSelection(insertionPoint: atStart ? model.input.startIndex : model.input.endIndex)
             inputFocused = true
         }
     }
@@ -122,6 +124,18 @@ struct TranslateView: View {
                         guard !press.modifiers.contains(.shift) else { return .ignored }
                         model.translate()
                         return .handled
+                    }
+                    .mask {
+                        // Capped and scrolling: fade the bottom edge so it is clear there is more below.
+                        if TranslatePanelLayout.inputOverflows(natural: inputTextHeight) {
+                            VStack(spacing: 0) {
+                                Rectangle()
+                                LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom)
+                                    .frame(height: TranslatePanelLayout.inputFadeHeight)
+                            }
+                        } else {
+                            Rectangle()
+                        }
                     }
             }
             // The editor's own ideal height is its whole text (a full-screen OCR made the panel 1800 pt tall), so

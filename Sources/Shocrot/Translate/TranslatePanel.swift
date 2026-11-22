@@ -12,6 +12,8 @@ final class TranslatePanel: NSPanel, HeaderDraggable {
     /// so placing it by its current height alone would leave the results running off the screen.
     static let plannedHeight: CGFloat = 420
 
+    static let caretAtStartKey = "caretAtStart"
+
     let model = TranslateModel()
     private var clickMonitors: [Any] = []
     /// The display chosen when the panel was placed; used while the panel is not on any display yet.
@@ -34,7 +36,9 @@ final class TranslatePanel: NSPanel, HeaderDraggable {
         panel.makeKey()
         panel.watchOutsideClicks()
         if let text { panel.model.query(text) } else { panel.model.translate() }
-        NotificationCenter.default.post(name: .focusTranslateInput, object: nil)
+        // Text brought in (OCR, a selection) is read from its start; typed text is added to at the end.
+        NotificationCenter.default.post(name: .focusTranslateInput, object: nil,
+                                        userInfo: [TranslatePanel.caretAtStartKey: text != nil])
     }
 
     /// Builds the panel ahead of time so the first translation opens as fast as later ones.
@@ -213,6 +217,14 @@ enum TranslatePanelLayout {
     /// Height of the input editor for text whose natural height is `natural`.
     static func inputHeight(natural: CGFloat) -> CGFloat {
         min(max(natural, inputMinHeight), inputMaxHeight)
+    }
+
+    /// Text taller than the editor scrolls; its bottom edge then fades out over this height, a hint that there
+    /// is more below.
+    static let inputFadeHeight: CGFloat = 18
+
+    static func inputOverflows(natural: CGFloat) -> Bool {
+        natural > inputMaxHeight
     }
 
     /// Height of the results list showing `content` points of results below `chrome`, so the whole panel stays
