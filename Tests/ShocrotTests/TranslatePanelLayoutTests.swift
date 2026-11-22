@@ -1,4 +1,5 @@
 import CoreGraphics
+import SwiftUI
 import Testing
 @testable import Shocrot
 
@@ -46,6 +47,13 @@ struct TranslatePanelLayoutTests {
         let results = L.resultsHeight(content: 120, chrome: 150, maxPanelHeight: 933)
         #expect(results == 120)
         #expect(L.panelHeight(chrome: 150, results: 0) == L.topPadding + 150 + L.bottomPadding)
+    }
+
+    /// Capped results scroll, so their scroller must not be hidden: the system shows it when there is more.
+    @Test func resultsScrollerFollowsTheSystemDefault() {
+        #expect(L.resultsScrollIndicators == .automatic)
+        #expect(L.resultsScrollIndicators != .never)
+        #expect(L.resultsScrollIndicators != .hidden)
     }
 
     @Test func unknownDisplayHeightFallsBackToTheUsualCap() {

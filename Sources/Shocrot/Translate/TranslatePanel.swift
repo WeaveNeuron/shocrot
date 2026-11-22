@@ -162,6 +162,9 @@ enum TranslatePanelLayout {
     static let resultsMaxHeight: CGFloat = 460
     /// Room the results keep however little the display has left.
     static let resultsMinHeight: CGFloat = 80
+    /// The system's own behaviour: a scroller appears when the capped results run longer than the list (and per
+    /// the "Show scroll bars" setting), so it is clear there is more to scroll to.
+    static let resultsScrollIndicators: ScrollIndicatorVisibility = .automatic
 
     /// Height of the input editor for text whose natural height is `natural`.
     static func inputHeight(natural: CGFloat) -> CGFloat {

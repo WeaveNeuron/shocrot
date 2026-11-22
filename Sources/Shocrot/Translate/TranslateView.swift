@@ -31,7 +31,7 @@ struct TranslateView: View {
                     }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { resultsHeight = $0 }
                 }
-                .scrollIndicators(.never)
+                .scrollIndicators(TranslatePanelLayout.resultsScrollIndicators)
                 // Capped so the whole panel fits its display; the rest scrolls.
                 .frame(height: TranslatePanelLayout.resultsHeight(content: resultsHeight, chrome: chromeHeight,
                                                                   maxPanelHeight: model.maxPanelHeight))
