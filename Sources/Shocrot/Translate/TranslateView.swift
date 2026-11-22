@@ -86,7 +86,7 @@ struct TranslateView: View {
     }
 
     private func requestDownload() {
-        guard let source = model.detected, let target = model.resolvedTarget else { return }
+        guard let source = model.resolvedSource, let target = model.resolvedTarget else { return }
         if downloadRequest?.source == source.locale && downloadRequest?.target == target.locale {
             downloadRequest?.invalidate()
         } else {
@@ -138,13 +138,12 @@ struct TranslateView: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { inputTextHeight = $0 }
             }
             HStack(spacing: 2) {
-                if let detected = model.detected {
-                    Text(model.source == nil ? L("translate.detected", detected.name) : detected.name)
-                        .font(.caption).foregroundStyle(.secondary)
+                if let caption = model.sourceCaption {
+                    Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
                 IconButton(symbol: speaker.speakingID == "input" ? "stop.fill" : "speaker.wave.2", help: L("translate.speak")) {
-                    speaker.toggle(model.input, language: model.detected, id: "input")
+                    speaker.toggle(model.input, language: model.detected ?? model.resolvedSource, id: "input")
                 }
                 .disabled(model.input.isEmpty)
                 IconButton(symbol: "doc.on.doc", help: L("translate.copySource")) { ImageOutput.copyText(model.input) }
@@ -165,7 +164,7 @@ struct TranslateView: View {
 
     private var languageBar: some View {
         HStack(spacing: 8) {
-            LanguageMenu(selection: $model.source, automaticTitle: L("translate.autoDetect"), resolved: model.detected) { model.translate() }
+            LanguageMenu(selection: $model.source, automaticTitle: L("translate.autoDetect"), resolved: model.resolvedSource) { model.translate() }
             Button(action: model.swapLanguages) {
                 Image(systemName: "arrow.left.arrow.right").font(.system(size: 12, weight: .semibold))
                     .frame(width: 30, height: 26)
@@ -175,6 +174,8 @@ struct TranslateView: View {
             .foregroundStyle(.secondary)
             .help(L("translate.swap"))
             .accessibilityLabel(L("translate.swap"))
+            .disabled(!model.canSwap)
+            .opacity(model.canSwap ? 1 : 0.4)
             LanguageMenu(selection: $model.target, automaticTitle: L("translate.auto"), resolved: model.resolvedTarget) { model.translate() }
         }
     }
