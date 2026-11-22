@@ -135,16 +135,8 @@ final class TranslatePanel: NSPanel {
         let topLeft = anchor.map { WindowPlacement.topLeft(for: size, beside: $0, in: vf) }
             ?? WindowPlacement.centeredTopLeft(for: size, in: vf)
         setFrameTopLeftPoint(topLeft)
-        keepOnScreen()
-    }
-
-    /// Moves the panel back inside the visible frame of the display it is on (the one it was placed on while it
-    /// is on none).
-    private func keepOnScreen() {
-        let screens = NSScreen.screens.map { (frame: $0.frame, visible: $0.visibleFrame) }
-        let fallback = (connectedPlacementScreen ?? WindowPlacement.mouseScreen)?.visibleFrame
-        let fitted = WindowPlacement.onScreen(frame, screens: screens, fallback: fallback)
-        if fitted.origin != frame.origin { setFrameOrigin(fitted.origin) }
+        // Its current height can differ from the planned one (taller from a previous translation).
+        keeper?.pullBackNow()
     }
 
     /// The display the panel was placed on, while it is still connected: an unplugged one can linger with its

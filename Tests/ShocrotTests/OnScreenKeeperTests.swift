@@ -145,6 +145,18 @@ struct OnScreenKeeperTests {
         withExtendedLifetime(keeper) {}
     }
 
+    /// The translation panel is placed before it is shown, possibly taller than planned: it is fitted then.
+    @Test func aWindowJustPlacedIsFittedBeforeItIsShown() {
+        let world = World()
+        let window = makeWindow(CGRect(x: 300, y: 300, width: 420, height: 400))
+        window.shown = false
+        let keeper = makeKeeper(window, world)
+        window.setFrameTopLeftPoint(CGPoint(x: 1000, y: 300)) // a 400 pt tall panel from y = 300 runs off
+        keeper.pullBackNow()
+        #expect(inside(window.frame, Self.laptop.visible))
+        #expect(window.frame.size == CGSize(width: 420, height: 400))
+    }
+
     // MARK: Displays changing under a window that does not move
 
     private func postDisplaysChanged() {

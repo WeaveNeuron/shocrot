@@ -80,8 +80,13 @@ final class OnScreenKeeper {
         }
     }
 
-    private func pullBack() {
-        guard let window, window.isVisible, !window.isMiniaturized, !inFullScreen,
+    /// Pulls the window back right away, even before it is shown: for a window that has just been placed.
+    func pullBackNow() {
+        pullBack(evenIfHidden: true)
+    }
+
+    private func pullBack(evenIfHidden: Bool = false) {
+        guard let window, evenIfHidden || window.isVisible, !window.isMiniaturized, !inFullScreen,
               !window.styleMask.contains(.fullScreen) else { return }
         let fitted = WindowPlacement.onScreen(window.frame, screens: screens(), fallback: fallback(),
                                               canShrink: canShrink)
