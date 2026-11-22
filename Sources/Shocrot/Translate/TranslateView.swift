@@ -201,17 +201,24 @@ private struct LanguageMenu: View {
     let onChange: () -> Void
 
     var body: some View {
+        let title = LanguageMenuTitle(selection: selection, resolved: resolved, automaticTitle: automaticTitle)
         Menu {
-            Button(automaticTitle) { selection = nil; onChange() }
+            // Toggles, so the menu ticks the current choice.
+            Toggle(automaticTitle, isOn: choosing(nil))
             Divider()
             ForEach(Language.all) { lang in
-                Button(lang.name) { selection = lang; onChange() }
+                Toggle(lang.name, isOn: choosing(lang))
             }
         } label: {
             HStack(spacing: 4) {
-                Text(selection?.name ?? resolved.map { "\(automaticTitle) · \($0.name)" } ?? automaticTitle)
-                    .lineLimit(1)
+                if title.showsAutomaticMark {
+                    Image(systemName: LanguageMenuTitle.automaticSymbol)
+                        .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+                Text(title.text).lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
             .font(.system(size: 12, weight: .medium))
             .frame(maxWidth: .infinity)
@@ -221,7 +228,38 @@ private struct LanguageMenu: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
+        .help(title.full)
+        // Named after the full title; the icons are hidden (the chevron was read as "Up And Down Chevrons").
+        .accessibilityLabel(title.full)
         .card()
+    }
+
+    private func choosing(_ language: Language?) -> Binding<Bool> {
+        Binding(get: { selection == language }) { isOn in
+            guard isOn, selection != language else { return }
+            selection = language
+            onChange()
+        }
+    }
+}
+
+/// What a language menu's button says. Detect / Automatic show just the language they resolved to, with a
+/// small mark, so the title fits the half-width button ("Automatic · Chinese (Simplified)" was cut off); the
+/// full wording goes to the tooltip and VoiceOver.
+struct LanguageMenuTitle: Equatable {
+    static let automaticSymbol = "wand.and.stars"
+    let text: String
+    let showsAutomaticMark: Bool
+    let full: String
+
+    init(selection: Language?, resolved: Language?, automaticTitle: String) {
+        if let selection {
+            (text, showsAutomaticMark, full) = (selection.name, false, selection.name)
+        } else if let resolved {
+            (text, showsAutomaticMark, full) = (resolved.name, true, "\(automaticTitle) · \(resolved.name)")
+        } else {
+            (text, showsAutomaticMark, full) = (automaticTitle, false, automaticTitle)
+        }
     }
 }
 

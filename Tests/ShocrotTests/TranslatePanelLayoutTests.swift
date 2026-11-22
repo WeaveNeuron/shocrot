@@ -60,3 +60,37 @@ struct TranslatePanelLayoutTests {
         #expect(L.resultsHeight(content: 2400, chrome: 200, maxPanelHeight: .greatestFiniteMagnitude) == L.resultsMaxHeight)
     }
 }
+
+/// The language menus' button titles: the target menu read "Automatic · Chinese (Simplified)" and was cut off.
+struct LanguageMenuTitleTests {
+    let zh = Language.named("zh-Hans")
+
+    @Test func automaticShowsOnlyTheResolvedLanguage() {
+        let t = LanguageMenuTitle(selection: nil, resolved: zh, automaticTitle: "Automatic")
+        #expect(t.text == zh.name)
+        #expect(t.showsAutomaticMark)
+        #expect(t.full == "Automatic · \(zh.name)")
+    }
+
+    @Test func aChosenLanguageIsJustItsName() {
+        let t = LanguageMenuTitle(selection: zh, resolved: Language.named("en"), automaticTitle: "Automatic")
+        #expect(t == LanguageMenuTitle(selection: zh, resolved: nil, automaticTitle: "x"))
+        #expect(t.text == zh.name && !t.showsAutomaticMark)
+    }
+
+    @Test func nothingResolvedYetShowsTheAutomaticTitle() {
+        let t = LanguageMenuTitle(selection: nil, resolved: nil, automaticTitle: "Detect Language")
+        #expect(t.text == "Detect Language" && !t.showsAutomaticMark)
+    }
+
+    /// Every title names at most one language, so none is longer than the longest language name.
+    @Test func noTitleIsLongerThanOneLanguageName() {
+        let longest = Language.all.map(\.name.count).max()!
+        for language in Language.all {
+            for t in [LanguageMenuTitle(selection: language, resolved: nil, automaticTitle: "Automatic"),
+                      LanguageMenuTitle(selection: nil, resolved: language, automaticTitle: "Automatic")] {
+                #expect(t.text.count <= longest)
+            }
+        }
+    }
+}
