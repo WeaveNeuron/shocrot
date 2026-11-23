@@ -4,6 +4,18 @@ English | [简体中文](README.zh-CN.md)
 
 Shocrot is a lightweight menu bar app for macOS that puts screenshots, screen recording, annotation, text recognition (OCR) and translation behind a single shortcut. It is written in pure Swift (AppKit + SwiftUI) with no third-party dependencies. Text recognition uses the Vision framework built into macOS and works fully offline.
 
+Press ⌥⇧A and drag over any part of the screen. One toolbar then lets you mark it up, recognize its text, translate it, pin it, save it or record it.
+
+![Selecting an area and marking it up with a box, an arrow, text, a step number and a mosaic](docs/images/en/capture.png)
+
+**Recognize text**: every line found is outlined on the image, and the text is copied right away and stays editable.
+
+![Text recognition window with the capture on the left and the recognized text on the right](docs/images/en/ocr.png)
+
+**Translate**: the language is detected automatically, and Apple Translate works offline.
+
+<img src="docs/images/en/translate.png" width="480" alt="Translation panel translating a Chinese sentence into English with Apple Translate">
+
 ## Highlights
 
 - **Area capture**: snaps to windows, magnifier with color picker (press C to copy the color), pixel size readout, 8-way resize and drag, arrow-key nudging. ⌥-click captures a single window with its shadow.
