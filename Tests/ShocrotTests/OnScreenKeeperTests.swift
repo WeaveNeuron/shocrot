@@ -18,6 +18,11 @@ struct OnScreenKeeperTests {
     final class ShownWindow: NSWindow {
         var shown = true
         override var isVisible: Bool { shown }
+        /// AppKit keeps a window's top below the menu bar of the *real* main display on every `setFrame` /
+        /// `setFrameOrigin`: on a 960×588 main display, a 400 pt window moved to y 310 lands at y 158. That
+        /// rewrites the frames these tests set and the keeper's pull-backs inside the fake 982 pt laptop, so the
+        /// outcome depended on the machine's display. The tests are about the keeper against the fake world.
+        override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
     }
 
     /// The fake world the keeper reads: displays and the left mouse button.
