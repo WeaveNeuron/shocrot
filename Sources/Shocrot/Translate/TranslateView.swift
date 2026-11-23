@@ -12,6 +12,7 @@ struct TranslateView: View {
     @State private var resultsHeight: CGFloat = 0
     @State private var chromeHeight: CGFloat = 0
     @State private var inputTextHeight: CGFloat = 0
+    @State private var inputScroll: TextScrollState?
     @State private var downloadRequest: TranslationSession.Configuration?
 
     var body: some View {
@@ -129,16 +130,21 @@ struct TranslateView: View {
                         model.translate()
                         return .handled
                     }
+                    .background { TextScrollObserver { inputScroll = $0 } }
                     .mask {
-                        // Capped and scrolling: fade the bottom edge so it is clear there is more below.
-                        if TranslatePanelLayout.inputOverflows(natural: inputTextHeight) {
-                            VStack(spacing: 0) {
-                                Rectangle()
+                        // Capped and scrolling: fade an edge while there is more text past it, so it is clear the
+                        // text goes on, but not once scrolled to that end, where its line must be readable.
+                        let fades = TranslatePanelLayout.inputFades(natural: inputTextHeight, scroll: inputScroll)
+                        VStack(spacing: 0) {
+                            if fades.top {
+                                LinearGradient(colors: [.black.opacity(0), .black], startPoint: .top, endPoint: .bottom)
+                                    .frame(height: TranslatePanelLayout.inputFadeHeight)
+                            }
+                            Rectangle()
+                            if fades.bottom {
                                 LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom)
                                     .frame(height: TranslatePanelLayout.inputFadeHeight)
                             }
-                        } else {
-                            Rectangle()
                         }
                     }
             }

@@ -29,6 +29,35 @@ struct TranslatePanelLayoutTests {
         #expect(L.inputFadeHeight < L.inputMinHeight / 2)
     }
 
+    /// Reported after build 119: scrolled to the end, the last line still faded out. Each edge fades only while
+    /// there is more text past it.
+    @Test func theInputFadesOnlyTowardsMoreText() {
+        let natural: CGFloat = 600  // capped at 140
+        func fades(_ offset: CGFloat) -> (Bool, Bool) {
+            let f = L.inputFades(natural: natural, scroll: TextScrollState(offset: offset, content: 600, visible: 140))
+            return (f.top, f.bottom)
+        }
+        #expect(fades(0) == (false, true))       // at the top: more below
+        #expect(fades(200) == (true, true))      // in the middle: more both ways
+        #expect(fades(460) == (true, false))     // at the end: the last line is clear
+        #expect(fades(459.5) == (true, false))   // a fraction from the end counts as the end
+        #expect(fades(0.5) == (false, true))     // likewise at the top
+    }
+
+    @Test func textThatFitsNeverFades() {
+        let short = L.inputFades(natural: 80, scroll: TextScrollState(offset: 0, content: 80, visible: 80))
+        #expect(!short.top && !short.bottom)
+        // Measured taller than the cap, but the editor shows it all (e.g. a trailing newline in the measurement).
+        let fits = L.inputFades(natural: 150, scroll: TextScrollState(offset: 0, content: 140, visible: 140))
+        #expect(!fits.top && !fits.bottom)
+        #expect(L.inputFades(natural: 80, scroll: nil) == (false, false))
+    }
+
+    /// Before the editor's scroll position is known, capped text fades at the bottom only: it opens at its top.
+    @Test func anUnknownScrollPositionFadesTheBottom() {
+        #expect(L.inputFades(natural: 600, scroll: nil) == (false, true))
+    }
+
     @Test func fullScreenTranslationFitsTheDisplay() {
         let maxPanel = WindowPlacement.maxHeight(in: laptopVisible)
         let results = L.resultsHeight(content: 2400, chrome: tallestChrome, maxPanelHeight: maxPanel)

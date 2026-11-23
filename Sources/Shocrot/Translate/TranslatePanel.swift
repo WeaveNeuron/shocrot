@@ -230,6 +230,18 @@ enum TranslatePanelLayout {
         natural > inputMaxHeight
     }
 
+    /// Which edges of the input fade: the bottom while there is more text below, the top once scrolled down from
+    /// the top, so the line at either end is fully visible when scrolled there. `scroll` is the editor's scroll
+    /// position; until it is known, a capped text fades at the bottom only (it opens scrolled to the top).
+    static func inputFades(natural: CGFloat, scroll: TextScrollState?) -> (top: Bool, bottom: Bool) {
+        guard inputOverflows(natural: natural) else { return (false, false) }
+        guard let scroll, scroll.content > scroll.visible + scrollTolerance else { return (false, scroll == nil) }
+        return (scroll.offset > scrollTolerance, scroll.offset + scroll.visible < scroll.content - scrollTolerance)
+    }
+
+    /// Scrolled within this of an end counts as at that end (fractional offsets, elastic scrolling).
+    static let scrollTolerance: CGFloat = 1
+
     /// Height of the results list showing `content` points of results below `chrome`, so the whole panel stays
     /// within `maxPanelHeight` (the display's visible height less margins).
     static func resultsHeight(content: CGFloat, chrome: CGFloat, maxPanelHeight: CGFloat) -> CGFloat {
