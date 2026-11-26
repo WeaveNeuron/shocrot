@@ -29,6 +29,7 @@ enum SelectionSecurity {
 /// CoreGraphics / Accessibility coordinates have origin at the top-left of the primary display (y down).
 enum SelectionPopupLayout {
     static let margin: CGFloat = 8
+    static let windowMargin: CGFloat = 4
     static let iconGap: CGFloat = 8
     static let iconVerticalGap: CGFloat = 6
     static let popoverGap: CGFloat = 8
@@ -151,15 +152,36 @@ enum SelectionPopupLayout {
         return (mouseUp.y - 11, mouseUp.y + 13)
     }
 
-    /// Places the trigger icon beside the selection's line without covering any text:
+    /// Intersects the display's inset visible frame with the owning `AXWindow`'s inset frame (when available and
+    /// large enough to hold the icon) so the floating trigger icon stays strictly inside the target window's
+    /// visible area and never spills onto neighboring apps.
+    static func effectiveIconBounds(visible: CGRect, windowFrame: CGRect?,
+                                    size: CGSize = iconSize,
+                                    margin: CGFloat = margin,
+                                    windowMargin: CGFloat = windowMargin) -> CGRect {
+        let screenBounds = visible.insetBy(dx: margin, dy: margin)
+        guard let windowFrame, windowFrame.width > 0, windowFrame.height > 0 else {
+            return screenBounds
+        }
+        let insetWindow = windowFrame.insetBy(dx: windowMargin, dy: windowMargin)
+        let clipped = screenBounds.intersection(insetWindow)
+        guard !clipped.isNull, clipped.width >= size.width, clipped.height >= size.height else {
+            return screenBounds
+        }
+        return clipped
+    }
+
+    /// Places the trigger icon beside the selection's line without covering any text, strictly constrained
+    /// inside the owning window's visible area (intersected with the display's visible frame):
     /// - Left→right (or multi-click): to the right of the line's trailing edge, vertically centered on that line.
     /// - Right→left (or upward multi-line): to the left of the line's leading edge, vertically centered on that line.
-    /// - When horizontal room beside the line is insufficient (or AX line bounds are unavailable), falls back above
-    ///   the line near the release edge, and below only if the line is against the top edge of the display.
+    /// - When horizontal room beside the line inside the window/screen is insufficient (or AX line bounds are
+    ///   unavailable), falls back above the line aligned to the selection endpoint, and below only if the line is
+    ///   against the top edge of the available bounds.
     static func iconFrame(mouseDown: CGPoint, mouseUp: CGPoint, selectionBounds: CGRect?,
-                          lineBounds: CGRect? = nil,
+                          lineBounds: CGRect? = nil, windowFrame: CGRect? = nil,
                           size: CGSize = iconSize, in visible: CGRect, margin: CGFloat = margin) -> CGRect {
-        let bounds = visible.insetBy(dx: margin, dy: margin)
+        let bounds = effectiveIconBounds(visible: visible, windowFrame: windowFrame, size: size, margin: margin)
         let anchorAtStart = isAnchoredAtStart(mouseDown: mouseDown, mouseUp: mouseUp, selectionBounds: selectionBounds)
         let line = effectiveLineRect(mouseUp: mouseUp, selectionBounds: selectionBounds, lineBounds: lineBounds)
 
@@ -294,6 +316,8 @@ struct AXSelectionSnapshot {
     /// Full visual line bounds containing the release endpoint (AppKit global points), cleared past any overlapping
     /// ragged-edge adjacent line so a vertically centered icon beside this line covers zero text.
     let lineBounds: CGRect?
+    /// Frame of the owning `AXWindow` in AppKit global points, used to keep the trigger icon inside the target window.
+    let windowFrame: CGRect?
 }
 
 /// Reads selected text and its screen bounds strictly via Accessibility APIs. Never simulates ⌘C or touches the clipboard.
@@ -342,7 +366,7 @@ enum AXSelectionReader {
         }
 
         for candidate in candidates {
-            if let snapshot = extract(from: candidate, mouseDown: mouseDown, mouseUp: point,
+            if let snapshot = extract(from: candidate, app: app, mouseDown: mouseDown, mouseUp: point,
                                       primaryScreenHeight: primaryScreenHeight) {
                 return snapshot
             }
@@ -350,7 +374,7 @@ enum AXSelectionReader {
         return nil
     }
 
-    private static func extract(from element: AXUIElement, mouseDown: CGPoint?, mouseUp: CGPoint?,
+    private static func extract(from element: AXUIElement, app: AXUIElement, mouseDown: CGPoint?, mouseUp: CGPoint?,
                                 primaryScreenHeight: CGFloat) -> AXSelectionSnapshot? {
         AXUIElementSetMessagingTimeout(element, 0.15)
         let rawText = selectedText(of: element)
@@ -359,7 +383,8 @@ enum AXSelectionReader {
         let lineBounds = selectionLineBounds(of: element, selectionBounds: bounds,
                                              mouseDown: mouseDown, mouseUp: mouseUp,
                                              primaryScreenHeight: primaryScreenHeight)
-        return AXSelectionSnapshot(text: text, bounds: bounds, lineBounds: lineBounds)
+        let winFrame = windowFrame(of: element, app: app, primaryScreenHeight: primaryScreenHeight)
+        return AXSelectionSnapshot(text: text, bounds: bounds, lineBounds: lineBounds, windowFrame: winFrame)
     }
 
     /// Tries standard AXSelectedText, then AXSelectedTextRange + AXStringForRange, then WebKit marker range,
@@ -575,6 +600,30 @@ enum AXSelectionReader {
         return SelectionPopupLayout.cgRectToAppKit(cgRect, primaryScreenHeight: primaryScreenHeight)
     }
 
+    /// Reads the owning `AXWindow` frame (AppKit global points) via `kAXWindowAttribute`, ancestor walk, or the
+    /// application's focused window fallback.
+    private static func windowFrame(of element: AXUIElement, app: AXUIElement, primaryScreenHeight: CGFloat) -> CGRect? {
+        guard primaryScreenHeight > 0 else { return nil }
+        if let win = elementAttribute(element, kAXWindowAttribute),
+           let frame = elementFrame(win, primaryScreenHeight: primaryScreenHeight) {
+            return frame
+        }
+        var current: AXUIElement? = element
+        for _ in 0..<12 {
+            guard let el = current else { break }
+            if stringAttribute(el, kAXRoleAttribute) == kAXWindowRole,
+               let frame = elementFrame(el, primaryScreenHeight: primaryScreenHeight) {
+                return frame
+            }
+            current = elementAttribute(el, kAXParentAttribute)
+        }
+        if let focused = elementAttribute(app, kAXFocusedWindowAttribute),
+           let frame = elementFrame(focused, primaryScreenHeight: primaryScreenHeight) {
+            return frame
+        }
+        return nil
+    }
+
     /// Walks up to the nearest scroll/web viewport to bound horizontally scrolled lines.
     private static func containerFrame(of element: AXUIElement, primaryScreenHeight: CGFloat) -> CGRect? {
         var current: AXUIElement? = element
@@ -721,6 +770,7 @@ final class SelectionTranslateController {
         let mouseUp: CGPoint
         let selectionBounds: CGRect?
         let lineBounds: CGRect?
+        let windowFrame: CGRect?
         let screen: NSScreen
     }
 
@@ -810,7 +860,7 @@ final class SelectionTranslateController {
             guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { return }
             self.showIcon(for: PendingContext(text: snapshot.text, mouseDown: down, mouseUp: location,
                                               selectionBounds: snapshot.bounds, lineBounds: snapshot.lineBounds,
-                                              screen: screen))
+                                              windowFrame: snapshot.windowFrame, screen: screen))
         }
     }
 
@@ -833,10 +883,11 @@ final class SelectionTranslateController {
         let iconRect = SelectionPopupLayout.iconFrame(mouseDown: context.mouseDown, mouseUp: context.mouseUp,
                                                       selectionBounds: context.selectionBounds,
                                                       lineBounds: context.lineBounds,
+                                                      windowFrame: context.windowFrame,
                                                       in: context.screen.visibleFrame)
         let dir = SelectionPopupLayout.isAnchoredAtStart(mouseDown: context.mouseDown, mouseUp: context.mouseUp,
                                                          selectionBounds: context.selectionBounds) ? "rl" : "lr"
-        AXSelectionReader.log.notice("selection.icon dir=\(dir, privacy: .public) icon=\(NSStringFromRect(iconRect), privacy: .public) line=\(context.lineBounds.map(NSStringFromRect) ?? "nil", privacy: .public) sel=\(context.selectionBounds.map(NSStringFromRect) ?? "nil", privacy: .public)")
+        AXSelectionReader.log.notice("selection.icon dir=\(dir, privacy: .public) icon=\(NSStringFromRect(iconRect), privacy: .public) line=\(context.lineBounds.map(NSStringFromRect) ?? "nil", privacy: .public) sel=\(context.selectionBounds.map(NSStringFromRect) ?? "nil", privacy: .public) win=\(context.windowFrame.map(NSStringFromRect) ?? "nil", privacy: .public)")
         let panelFrame = iconRect.insetBy(dx: -inset, dy: -inset)
 
         let host = NSHostingView(rootView: SelectionTriggerView(

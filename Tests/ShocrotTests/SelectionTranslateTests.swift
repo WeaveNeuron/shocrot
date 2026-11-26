@@ -162,6 +162,75 @@ struct SelectionPopupLayoutTests {
         #expect(topFallback.maxY == topRightLine.minY - L.iconVerticalGap)
     }
 
+    @Test func iconStaysStrictlyInsideOwningWindowFrame() {
+        // TextEdit-like window centered on screen: plenty of screen room outside, tight padding inside.
+        let win = CGRect(x: 480, y: 360, width: 840, height: 520) // x 480...1320, y 360...880
+        let winInset = win.insetBy(dx: L.windowMargin, dy: L.windowMargin)
+
+        // R→L: line starts 10 pt inside window's left border (not enough room for 28pt icon + 8pt gap inside window).
+        // Must NOT spill outside win.minX; falls back above the line, left-aligned to selection start.
+        let rlLine = CGRect(x: 490, y: 760, width: 788, height: 16)
+        let sel = CGRect(x: 662, y: 760, width: 245, height: 16)
+        let rlIcon = L.iconFrame(mouseDown: CGPoint(x: 907, y: 768),
+                                 mouseUp: CGPoint(x: 662, y: 768),
+                                 selectionBounds: sel,
+                                 lineBounds: rlLine,
+                                 windowFrame: win,
+                                 in: visible)
+        #expect(winInset.contains(rlIcon))
+        #expect(rlIcon.minY == rlLine.maxY + L.iconVerticalGap)
+        #expect(rlIcon.minX == sel.minX)
+
+        // L→R with sufficient right margin inside window (42 pt): fits beside line end inside window.
+        let lrFits = L.iconFrame(mouseDown: CGPoint(x: 662, y: 768),
+                                 mouseUp: CGPoint(x: 907, y: 768),
+                                 selectionBounds: sel,
+                                 lineBounds: rlLine,
+                                 windowFrame: win,
+                                 in: visible)
+        #expect(winInset.contains(lrFits))
+        #expect(lrFits.minX == rlLine.maxX + L.iconGap)
+        #expect(abs(lrFits.midY - rlLine.midY) <= 1)
+
+        // L→R with tight right edge inside window (only 16 pt to right border): must NOT spill outside win.maxX;
+        // falls back above the line, right-aligned to selection end.
+        let tightRightLine = CGRect(x: 490, y: 760, width: 814, height: 16) // maxX = 1304, win.maxX = 1320
+        let lrFallback = L.iconFrame(mouseDown: CGPoint(x: 662, y: 768),
+                                     mouseUp: CGPoint(x: 907, y: 768),
+                                     selectionBounds: sel,
+                                     lineBounds: tightRightLine,
+                                     windowFrame: win,
+                                     in: visible)
+        #expect(winInset.contains(lrFallback))
+        #expect(lrFallback.minY == tightRightLine.maxY + L.iconVerticalGap)
+        #expect(lrFallback.maxX == sel.maxX)
+
+        // Near top of window with tight side edge: no room above inside window -> flips below, still inside window.
+        let topLine = CGRect(x: 490, y: win.maxY - 24, width: 814, height: 16)
+        let topSel = CGRect(x: 662, y: topLine.minY, width: 200, height: 16)
+        let topIcon = L.iconFrame(mouseDown: CGPoint(x: 862, y: topLine.midY),
+                                  mouseUp: CGPoint(x: 662, y: topLine.midY),
+                                  selectionBounds: topSel,
+                                  lineBounds: topLine,
+                                  windowFrame: win,
+                                  in: visible)
+        #expect(winInset.contains(topIcon))
+        #expect(topIcon.maxY == topLine.minY - L.iconVerticalGap)
+
+        // Window partially off the right edge of display: constrained to intersection of window and display visibleFrame.
+        let offscreenWin = CGRect(x: 1500, y: 360, width: 700, height: 520) // extends to x=2200 past visible.maxX=1920
+        let partialLine = CGRect(x: 1510, y: 760, width: 400, height: 16)
+        let partialSel = CGRect(x: 1600, y: 760, width: 180, height: 16)
+        let clippedIcon = L.iconFrame(mouseDown: CGPoint(x: 1600, y: 768),
+                                      mouseUp: CGPoint(x: 1780, y: 768),
+                                      selectionBounds: partialSel,
+                                      lineBounds: partialLine,
+                                      windowFrame: offscreenWin,
+                                      in: visible)
+        #expect(visible.insetBy(dx: L.margin, dy: L.margin).contains(clippedIcon))
+        #expect(offscreenWin.insetBy(dx: L.windowMargin, dy: L.windowMargin).contains(clippedIcon))
+    }
+
     @Test func multiLineSelectionFollowsMouseUpLineAndDirection() {
         let tallBounds = CGRect(x: 450, y: 600, width: 400, height: 120) // spans y 600...720
         let bottomLine = CGRect(x: 450, y: 600, width: 400, height: 18)
