@@ -18,6 +18,11 @@ final class HistoryStore: ObservableObject {
     let directory: URL
     private var indexURL: URL { directory.appendingPathComponent("index.json") }
     private let queue = DispatchQueue(label: "shocrot.history", qos: .utility)
+    private let thumbnailCache: NSCache<NSUUID, NSImage> = {
+        let c = NSCache<NSUUID, NSImage>()
+        c.countLimit = 80
+        return c
+    }()
 
     private convenience init() {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -68,12 +73,16 @@ final class HistoryStore: ObservableObject {
     }
 
     func thumbnail(for item: HistoryItem, maxPixel: Int = 480) -> NSImage? {
+        let key = item.id as NSUUID
+        if let cached = thumbnailCache.object(forKey: key) { return cached }
         guard let src = CGImageSourceCreateWithURL(url(for: item) as CFURL, nil),
               let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, [
                   kCGImageSourceCreateThumbnailFromImageAlways: true,
                   kCGImageSourceThumbnailMaxPixelSize: maxPixel,
               ] as CFDictionary) else { return nil }
-        return NSImage(cgImage: cg, size: CGSize(width: cg.width, height: cg.height))
+        let image = NSImage(cgImage: cg, size: CGSize(width: cg.width, height: cg.height))
+        thumbnailCache.setObject(image, forKey: key)
+        return image
     }
 
     @discardableResult
@@ -128,12 +137,14 @@ final class HistoryStore: ObservableObject {
     }
 
     func delete(_ item: HistoryItem) {
+        thumbnailCache.removeObject(forKey: item.id as NSUUID)
         removeFile(of: item)
         items.removeAll { $0.id == item.id }
         persist()
     }
 
     func clear() {
+        thumbnailCache.removeAllObjects()
         items.forEach(removeFile)
         items.removeAll()
         persist()
