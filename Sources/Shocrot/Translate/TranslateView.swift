@@ -4,17 +4,25 @@ import Translation
 
 struct TranslateView: View {
     @ObservedObject var model: TranslateModel
+    /// Closes the panel itself; `NSApp.keyWindow` may be another window (a pinned image, Settings) or none.
+    let onClose: () -> Void
     @ObservedObject private var speaker = Speaker.shared
     @FocusState private var inputFocused: Bool
     @State private var inputSelection: TextSelection?
     @State private var resultsHeight: CGFloat = 0
+    @State private var chromeHeight: CGFloat = 0
+    @State private var inputTextHeight: CGFloat = 0
+    @State private var inputScroll: TextScrollState?
     @State private var downloadRequest: TranslationSession.Configuration?
 
     var body: some View {
-        VStack(spacing: 10) {
-            header
-            inputCard
-            languageBar
+        VStack(spacing: TranslatePanelLayout.spacing) {
+            VStack(spacing: TranslatePanelLayout.spacing) {
+                header
+                inputCard
+                languageBar
+            }
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chromeHeight = $0 }
             if !model.results.isEmpty || model.definition != nil || !model.hasServices {
                 ScrollView {
                     VStack(spacing: 8) {
@@ -24,13 +32,15 @@ struct TranslateView: View {
                     }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { resultsHeight = $0 }
                 }
-                .scrollIndicators(.never)
-                .frame(height: min(resultsHeight, 460))
+                .scrollIndicators(TranslatePanelLayout.resultsScrollIndicators)
+                // Capped so the whole panel fits its display; the rest scrolls.
+                .frame(height: TranslatePanelLayout.resultsHeight(content: resultsHeight, chrome: chromeHeight,
+                                                                  maxPanelHeight: model.maxPanelHeight))
             }
         }
         .padding(.horizontal, 12)
-        .padding(.bottom, 12)
-        .padding(.top, 10)
+        .padding(.bottom, TranslatePanelLayout.bottomPadding)
+        .padding(.top, TranslatePanelLayout.topPadding)
         .frame(width: 420)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.primary.opacity(0.1), lineWidth: 0.5))
@@ -44,9 +54,11 @@ struct TranslateView: View {
             // ⇧⌘C copies the first finished translation, like the OCR window's copy shortcut.
             Button("") { copyFirstResult() }.keyboardShortcut("c", modifiers: [.command, .shift]).hidden()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .focusTranslateInput)) { _ in
-            // New text: caret at the end rather than a stale selection from the previous query.
-            inputSelection = TextSelection(insertionPoint: model.input.endIndex)
+        .onReceive(NotificationCenter.default.publisher(for: .focusTranslateInput)) { note in
+            // New text: a fresh caret rather than a stale selection from the previous query. At the start for
+            // recognized or selected text, so a long text shows its beginning rather than its end.
+            let atStart = note.userInfo?[TranslatePanel.caretAtStartKey] as? Bool == true
+            inputSelection = TextSelection(insertionPoint: atStart ? model.input.startIndex : model.input.endIndex)
             inputFocused = true
         }
     }
@@ -60,10 +72,17 @@ struct TranslateView: View {
             Spacer()
             IconButton(symbol: model.pinned ? "pin.fill" : "pin", help: model.pinned ? L("translate.unpin") : L("translate.pin"),
                        active: model.pinned) { model.pinned.toggle() }
-            IconButton(symbol: "gearshape", help: L("translate.settings")) { SettingsWindow.show(tab: .translate) }
-            IconButton(symbol: "xmark", help: L("common.closeEsc")) { NSApp.keyWindow?.close() }
+            IconButton(symbol: "gearshape", help: L("translate.settings")) {
+                // The floating panel would cover Settings; a pinned one stays where the user wants it.
+                if !model.pinned { onClose() }
+                SettingsWindow.show(tab: .translate)
+            }
+            IconButton(symbol: "xmark", help: L("common.closeEsc"), action: onClose)
         }
         .frame(height: 22)
+        // The header is the panel's title bar: drag it to move the borderless panel. The buttons keep their clicks.
+        // Not `WindowDragGesture`: dropped in the menu bar, a system drag tiles the panel to the screen centre.
+        .background { HeaderDragHandle() }
     }
 
     private func copyFirstResult() {
@@ -74,7 +93,7 @@ struct TranslateView: View {
     }
 
     private func requestDownload() {
-        guard let source = model.detected, let target = model.resolvedTarget else { return }
+        guard let source = model.resolvedSource, let target = model.resolvedTarget else { return }
         if downloadRequest?.source == source.locale && downloadRequest?.target == target.locale {
             downloadRequest?.invalidate()
         } else {
@@ -102,13 +121,6 @@ struct TranslateView: View {
                         .padding(.top, 1)
                         .allowsHitTesting(false)
                 }
-                // TextEditor has no intrinsic height; a hidden copy of the text sizes it to fit.
-                Text(model.input + " ")
-                    .font(.system(size: 14))
-                    .padding(.horizontal, 5)
-                    .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 140, alignment: .topLeading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .hidden()
                 TextEditor(text: $model.input, selection: $inputSelection)
                     .font(.system(size: 14))
                     .scrollContentBackground(.hidden)
@@ -118,15 +130,45 @@ struct TranslateView: View {
                         model.translate()
                         return .handled
                     }
+                    .background { TextScrollObserver { inputScroll = $0 } }
+                    .mask {
+                        // Capped and scrolling: fade an edge while there is more text past it, so it is clear the
+                        // text goes on, but not once scrolled to that end, where its line must be readable.
+                        let fades = TranslatePanelLayout.inputFades(natural: inputTextHeight, scroll: inputScroll)
+                        VStack(spacing: 0) {
+                            if fades.top {
+                                LinearGradient(colors: [.black.opacity(0), .black], startPoint: .top, endPoint: .bottom)
+                                    .frame(height: TranslatePanelLayout.inputFadeHeight)
+                            }
+                            Rectangle()
+                            if fades.bottom {
+                                LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom)
+                                    .frame(height: TranslatePanelLayout.inputFadeHeight)
+                            }
+                        }
+                    }
+            }
+            // The editor's own ideal height is its whole text (a full-screen OCR made the panel 1800 pt tall), so
+            // it gets a fixed height instead: a hidden copy of the text measures it, capped; longer text scrolls.
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(height: TranslatePanelLayout.inputHeight(natural: inputTextHeight))
+            .background(alignment: .topLeading) {
+                Text(model.input + " ")
+                    .font(.system(size: 14))
+                    .padding(.horizontal, 5)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .hidden()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { inputTextHeight = $0 }
             }
             HStack(spacing: 2) {
-                if let detected = model.detected {
-                    Text(model.source == nil ? L("translate.detected", detected.name) : detected.name)
-                        .font(.caption).foregroundStyle(.secondary)
+                if let caption = model.sourceCaption {
+                    Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer()
-                IconButton(symbol: speaker.speakingID == "input" ? "stop.fill" : "speaker.wave.2", help: L("translate.speak")) {
-                    speaker.toggle(model.input, language: model.detected, id: "input")
+                IconButton(symbol: speaker.speakingID == "input" ? "stop.fill" : "speaker.wave.2",
+                           help: speakHelp(speaking: speaker.speakingID == "input")) {
+                    speaker.toggle(model.input, language: model.detected ?? model.resolvedSource, id: "input")
                 }
                 .disabled(model.input.isEmpty)
                 IconButton(symbol: "doc.on.doc", help: L("translate.copySource")) { ImageOutput.copyText(model.input) }
@@ -147,7 +189,7 @@ struct TranslateView: View {
 
     private var languageBar: some View {
         HStack(spacing: 8) {
-            LanguageMenu(selection: $model.source, automaticTitle: L("translate.autoDetect"), resolved: model.detected) { model.translate() }
+            LanguageMenu(selection: $model.source, automaticTitle: L("translate.autoDetect"), resolved: model.resolvedSource) { model.translate() }
             Button(action: model.swapLanguages) {
                 Image(systemName: "arrow.left.arrow.right").font(.system(size: 12, weight: .semibold))
                     .frame(width: 30, height: 26)
@@ -157,6 +199,8 @@ struct TranslateView: View {
             .foregroundStyle(.secondary)
             .help(L("translate.swap"))
             .accessibilityLabel(L("translate.swap"))
+            .disabled(!model.canSwap)
+            .opacity(model.canSwap ? 1 : 0.4)
             LanguageMenu(selection: $model.target, automaticTitle: L("translate.auto"), resolved: model.resolvedTarget) { model.translate() }
         }
     }
@@ -182,17 +226,24 @@ private struct LanguageMenu: View {
     let onChange: () -> Void
 
     var body: some View {
+        let title = LanguageMenuTitle(selection: selection, resolved: resolved, automaticTitle: automaticTitle)
         Menu {
-            Button(automaticTitle) { selection = nil; onChange() }
+            // Toggles, so the menu ticks the current choice.
+            Toggle(automaticTitle, isOn: choosing(nil))
             Divider()
             ForEach(Language.all) { lang in
-                Button(lang.name) { selection = lang; onChange() }
+                Toggle(lang.name, isOn: choosing(lang))
             }
         } label: {
             HStack(spacing: 4) {
-                Text(selection?.name ?? resolved.map { "\(automaticTitle) · \($0.name)" } ?? automaticTitle)
-                    .lineLimit(1)
+                if title.showsAutomaticMark {
+                    Image(systemName: LanguageMenuTitle.automaticSymbol)
+                        .font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+                Text(title.text).lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
             .font(.system(size: 12, weight: .medium))
             .frame(maxWidth: .infinity)
@@ -202,7 +253,38 @@ private struct LanguageMenu: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
+        .help(title.full)
+        // Named after the full title; the icons are hidden (the chevron was read as "Up And Down Chevrons").
+        .accessibilityLabel(title.full)
         .card()
+    }
+
+    private func choosing(_ language: Language?) -> Binding<Bool> {
+        Binding(get: { selection == language }) { isOn in
+            guard isOn, selection != language else { return }
+            selection = language
+            onChange()
+        }
+    }
+}
+
+/// What a language menu's button says. Detect / Automatic show just the language they resolved to, with a
+/// small mark, so the title fits the half-width button ("Automatic · Chinese (Simplified)" was cut off); the
+/// full wording goes to the tooltip and VoiceOver.
+struct LanguageMenuTitle: Equatable {
+    static let automaticSymbol = "wand.and.stars"
+    let text: String
+    let showsAutomaticMark: Bool
+    let full: String
+
+    init(selection: Language?, resolved: Language?, automaticTitle: String) {
+        if let selection {
+            (text, showsAutomaticMark, full) = (selection.name, false, selection.name)
+        } else if let resolved {
+            (text, showsAutomaticMark, full) = (resolved.name, true, "\(automaticTitle) · \(resolved.name)")
+        } else {
+            (text, showsAutomaticMark, full) = (automaticTitle, false, automaticTitle)
+        }
     }
 }
 
@@ -222,7 +304,8 @@ private struct ResultCard: View {
                 if result.isLoading {
                     ProgressView().controlSize(.mini)
                 } else if result.error == nil {
-                    IconButton(symbol: speaker.speakingID == "r\(result.id)" ? "stop.fill" : "speaker.wave.2", help: L("translate.speak")) {
+                    IconButton(symbol: speaker.speakingID == "r\(result.id)" ? "stop.fill" : "speaker.wave.2",
+                               help: speakHelp(speaking: speaker.speakingID == "r\(result.id)")) {
                         speaker.toggle(result.text, language: language, id: "r\(result.id)")
                     }
                     IconButton(symbol: copied ? "checkmark" : "doc.on.doc", help: L("translate.copyTranslation")) {
@@ -300,6 +383,11 @@ private struct DefinitionCard: View {
         .padding(10)
         .card()
     }
+}
+
+/// The read-aloud button's tooltip and VoiceOver label: it turns into a stop button while reading.
+func speakHelp(speaking: Bool) -> String {
+    speaking ? L("translate.stopSpeaking") : L("translate.speak")
 }
 
 struct IconButton: View {

@@ -371,8 +371,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         case .pin:
             PinWindow.pin(result.image, textImage: result.ocrImage, scale: result.scale, at: result.globalRect)
         case .translate:
-            translate(image: result.ocrImage, historyID: historyID,
-                      near: CGPoint(x: result.globalRect.minX + 40, y: result.globalRect.minY))
+            translate(image: result.ocrImage, historyID: historyID, near: result.globalRect)
         case .ocr:
             recognize(image: result.ocrImage, scale: result.scale, historyID: historyID)
         case .scroll, .record:
@@ -416,8 +415,9 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
 
     // MARK: - Translate
 
-    func translate(image: CGImage, historyID: UUID? = nil, near point: CGPoint? = nil) {
-        TranslatePanel.showRecognizing(near: point)
+    /// `anchor`: the captured area in AppKit global coordinates; the panel opens next to it.
+    func translate(image: CGImage, historyID: UUID? = nil, near anchor: CGRect? = nil) {
+        TranslatePanel.showRecognizing(near: anchor)
         Task { @MainActor in
             do {
                 let result = try await OCRService.recognize(image, languages: Settings.shared.ocrLanguages)
@@ -428,7 +428,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                     return
                 }
                 if let historyID { HistoryStore.shared.setText(text, for: historyID) }
-                TranslatePanel.show(text: text, near: point)
+                TranslatePanel.show(text: text, near: anchor)
             } catch {
                 TranslatePanel.cancelRecognizing()
                 Feedback.error(error)
@@ -446,7 +446,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         let mouse = NSEvent.mouseLocation
         Task { @MainActor in
             let text = await SelectionReader.selectedText()
-            TranslatePanel.show(text: text?.isEmpty == false ? text : nil, near: mouse)
+            TranslatePanel.show(text: text?.isEmpty == false ? text : nil, near: CGRect(origin: mouse, size: .zero))
             SelectionReader.log.info("translate panel shown")
         }
     }

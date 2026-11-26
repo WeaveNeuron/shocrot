@@ -3,22 +3,42 @@ import SwiftUI
 
 /// The single floating translation window used by input, selection and screenshot translation.
 /// It never activates the app, and closes on a click outside unless pinned.
-final class TranslatePanel: NSPanel {
+/// Its header is the drag handle. The panel stays inside the visible area of its display: its content is capped
+/// to that height (long text scrolls), and it is pulled back on screen when its content grows or a drag ends.
+final class TranslatePanel: NSPanel, HeaderDraggable {
     private static var shared: TranslatePanel?
+
+    /// Height planned for when placing the panel: it opens small ("recognizing") and grows as results arrive,
+    /// so placing it by its current height alone would leave the results running off the screen.
+    static let plannedHeight: CGFloat = 420
+
+    static let caretAtStartKey = "caretAtStart"
 
     let model = TranslateModel()
     private var clickMonitors: [Any] = []
+    /// The display chosen when the panel was placed; used while the panel is not on any display yet.
+    private weak var placementScreen: NSScreen?
+    /// What the panel was last placed next to.
+    private var placedAnchor: CGRect?
+    /// Placed above its anchor, the panel keeps its bottom edge there as its content grows or shrinks, so it
+    /// stays next to the selection; nil once the user drags it, or when placed anywhere else.
+    private var keptBottom: CGFloat?
+    private var keeper: OnScreenKeeper?
 
+    /// `anchor`: what the panel belongs to, in AppKit global coordinates: the captured area, or a point
+    /// (zero-size rect) for a text selection. Without one the panel goes centred on the display under the pointer.
     @MainActor
-    static func show(text: String? = nil, near point: CGPoint? = nil) {
+    static func show(text: String? = nil, near anchor: CGRect? = nil) {
         let panel = shared ?? TranslatePanel()
         shared = panel
-        if !panel.isVisible || !panel.model.pinned { panel.place(near: point) }
+        if panel.needsPlacing(near: anchor) { panel.place(near: anchor) }
         panel.orderFrontRegardless()
         panel.makeKey()
         panel.watchOutsideClicks()
         if let text { panel.model.query(text) } else { panel.model.translate() }
-        NotificationCenter.default.post(name: .focusTranslateInput, object: nil)
+        // Text brought in (OCR, a selection) is read from its start; typed text is added to at the end.
+        NotificationCenter.default.post(name: .focusTranslateInput, object: nil,
+                                        userInfo: [TranslatePanel.caretAtStartKey: text != nil])
     }
 
     /// Builds the panel ahead of time so the first translation opens as fast as later ones.
@@ -29,12 +49,12 @@ final class TranslatePanel: NSPanel {
 
     /// Opens the panel immediately in a "recognizing" state; follow up with `show(text:near:)`.
     @MainActor
-    static func showRecognizing(near point: CGPoint?) {
+    static func showRecognizing(near anchor: CGRect?) {
         let panel = shared ?? TranslatePanel()
         shared = panel
         panel.model.clear()
         panel.model.isRecognizing = true
-        if !panel.isVisible || !panel.model.pinned { panel.place(near: point) }
+        if panel.needsPlacing(near: anchor) { panel.place(near: anchor) }
         panel.orderFrontRegardless()
         panel.watchOutsideClicks()
     }
@@ -59,17 +79,38 @@ final class TranslatePanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
-        isMovableByWindowBackground = true
+        // SwiftUI content never lets a background drag move the window; the header moves it (HeaderDragHandle).
+        isMovableByWindowBackground = false
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
-        let host = NSHostingController(rootView: TranslateView(model: model))
+        let host = NSHostingController(rootView: TranslateView(model: model) { [weak self] in self?.close() })
         host.sizingOptions = [.preferredContentSize]
         contentViewController = host
+        // Before the keeper's own observer, so the keeper checks the frame with the bottom already back in place.
+        NotificationCenter.default.addObserver(forName: NSWindow.didResizeNotification, object: self, queue: .main) {
+            [weak self] _ in
+            MainActor.assumeIsolated { self?.restoreKeptBottom() }
+        }
+        // The hosting controller resizes the window with its content, keeping the top left fixed, and the header
+        // drag can leave it past an edge: pull it back inside the display after either (after the drag ends).
+        keeper = OnScreenKeeper(window: self) { [weak self] in
+            (self?.connectedPlacementScreen ?? WindowPlacement.mouseScreen)?.visibleFrame
+        }
+        // Dragged to another display, or the display itself changed (resolution, Dock, unplugged): cap the
+        // content to the height the panel's display has now.
+        for (name, object) in [(NSWindow.didChangeScreenNotification, self as AnyObject?),
+                               (NSApplication.didChangeScreenParametersNotification, nil)] {
+            NotificationCenter.default.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.updateHeightLimit() }
+            }
+        }
     }
 
     override var canBecomeKey: Bool { true }
+
+    func headerDragDidBegin() { keptBottom = nil }
 
     override func cancelOperation(_ sender: Any?) { close() }
 
@@ -98,21 +139,119 @@ final class TranslatePanel: NSPanel {
         close()
     }
 
-    /// Below the cursor for selections, otherwise in the upper third of the active screen.
-    private func place(near point: CGPoint?) {
-        let mouse = point ?? NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens[0]
+    /// A hidden panel is placed; a pinned one stays where it is. So does one still showing for the same anchor:
+    /// a screenshot translation shows the panel while OCR runs, then again with the text, and the user may have
+    /// moved it in between.
+    private func needsPlacing(near anchor: CGRect?) -> Bool {
+        guard isVisible else { return true }
+        return !model.pinned && (anchor == nil || anchor != placedAnchor)
+    }
+
+    /// Next to the anchor (below, above, beside) on the display that shows it, else centred in the upper part of
+    /// the display under the pointer; always inside that display's visible frame.
+    private func place(near anchor: CGRect?) {
+        let screen = anchor.flatMap(WindowPlacement.screen(for:)) ?? WindowPlacement.mouseScreen
+        guard let screen else { return }
+        placementScreen = screen
+        placedAnchor = anchor
         let vf = screen.visibleFrame
-        let size = CGSize(width: 420, height: max(frame.height, 200))
-        var origin: CGPoint
-        if let point {
-            origin = CGPoint(x: point.x - 40, y: point.y - 16 - size.height)
-        } else {
-            origin = CGPoint(x: vf.midX - size.width / 2, y: vf.maxY - vf.height * 0.18 - size.height)
+        model.maxPanelHeight = WindowPlacement.maxHeight(in: vf)
+        let placement = Self.placement(width: frame.width, near: anchor, in: vf)
+        keptBottom = placement.keptBottom
+        // The window takes the planned frame itself, not just its position: it is still as tall as the previous
+        // translation left it (the content shrinks a moment later), and pulled on screen at that height it
+        // would be pushed up over the selection and stay there. From the planned frame the content resizes it,
+        // keeping the top (or, above the selection, the bottom) in place.
+        setFrame(placement.frame, display: false)
+        keeper?.pullBackNow()
+    }
+
+    /// Where a panel `width` wide goes when placed next to `anchor` (centred without one) inside `visible`.
+    /// It is planned at `plannedHeight` (capped to the display), never at its current height, which is left
+    /// over from the previous translation. Above the anchor it is placed by its bottom edge (`keptBottom`), which
+    /// then stays put while the content changes height. `frame` is the planned frame, which always fits `visible`.
+    static func placement(width: CGFloat, near anchor: CGRect?, in visible: CGRect)
+        -> (topLeft: CGPoint, keptBottom: CGFloat?, frame: CGRect) {
+        let size = CGSize(width: width, height: min(plannedHeight, WindowPlacement.maxHeight(in: visible)))
+        func frame(_ topLeft: CGPoint) -> CGRect { CGRect(origin: CGPoint(x: topLeft.x, y: topLeft.y - size.height), size: size) }
+        guard let anchor else {
+            let topLeft = WindowPlacement.centeredTopLeft(for: size, in: visible)
+            return (topLeft, nil, frame(topLeft))
         }
-        origin.x = min(max(origin.x, vf.minX + 8), vf.maxX - size.width - 8)
-        origin.y = min(max(origin.y, vf.minY + 8), vf.maxY - size.height - 8)
-        setFrameTopLeftPoint(CGPoint(x: origin.x, y: origin.y + size.height))
+        let p = WindowPlacement.placement(for: size, beside: anchor, in: visible)
+        return (p.topLeft, p.side == .above ? p.topLeft.y - size.height : nil, frame(p.topLeft))
+    }
+
+    private func restoreKeptBottom() {
+        guard let keptBottom, frame.minY != keptBottom else { return }
+        setFrameOrigin(CGPoint(x: frame.minX, y: keptBottom))
+    }
+
+    /// The display the panel was placed on, while it is still connected: an unplugged one can linger with its
+    /// old frame.
+    private var connectedPlacementScreen: NSScreen? {
+        placementScreen.flatMap { placed in NSScreen.screens.contains { $0 === placed } ? placed : nil }
+    }
+
+    private func updateHeightLimit() {
+        guard let screen = self.screen ?? connectedPlacementScreen else { return }
+        let limit = WindowPlacement.maxHeight(in: screen.visibleFrame)
+        if model.maxPanelHeight != limit { model.maxPanelHeight = limit }
+    }
+}
+
+/// The translation panel's vertical layout, kept here so the height cap can be checked without a window:
+/// header, input and language bar on top (the "chrome"), then the results list, which scrolls.
+enum TranslatePanelLayout {
+    static let topPadding: CGFloat = 10
+    static let bottomPadding: CGFloat = 12
+    static let spacing: CGFloat = 10
+    static let inputMinHeight: CGFloat = 44
+    /// Longer input (a full-screen OCR) scrolls inside the editor.
+    static let inputMaxHeight: CGFloat = 140
+    /// The results list never grows past this, even on a tall display.
+    static let resultsMaxHeight: CGFloat = 460
+    /// Room the results keep however little the display has left.
+    static let resultsMinHeight: CGFloat = 80
+    /// The system's own behaviour: a scroller appears when the capped results run longer than the list (and per
+    /// the "Show scroll bars" setting), so it is clear there is more to scroll to.
+    static let resultsScrollIndicators: ScrollIndicatorVisibility = .automatic
+
+    /// Height of the input editor for text whose natural height is `natural`.
+    static func inputHeight(natural: CGFloat) -> CGFloat {
+        min(max(natural, inputMinHeight), inputMaxHeight)
+    }
+
+    /// Text taller than the editor scrolls; its bottom edge then fades out over this height, a hint that there
+    /// is more below.
+    static let inputFadeHeight: CGFloat = 18
+
+    static func inputOverflows(natural: CGFloat) -> Bool {
+        natural > inputMaxHeight
+    }
+
+    /// Which edges of the input fade: the bottom while there is more text below, the top once scrolled down from
+    /// the top, so the line at either end is fully visible when scrolled there. `scroll` is the editor's scroll
+    /// position; until it is known, a capped text fades at the bottom only (it opens scrolled to the top).
+    static func inputFades(natural: CGFloat, scroll: TextScrollState?) -> (top: Bool, bottom: Bool) {
+        guard inputOverflows(natural: natural) else { return (false, false) }
+        guard let scroll, scroll.content > scroll.visible + scrollTolerance else { return (false, scroll == nil) }
+        return (scroll.offset > scrollTolerance, scroll.offset + scroll.visible < scroll.content - scrollTolerance)
+    }
+
+    /// Scrolled within this of an end counts as at that end (fractional offsets, elastic scrolling).
+    static let scrollTolerance: CGFloat = 1
+
+    /// Height of the results list showing `content` points of results below `chrome`, so the whole panel stays
+    /// within `maxPanelHeight` (the display's visible height less margins).
+    static func resultsHeight(content: CGFloat, chrome: CGFloat, maxPanelHeight: CGFloat) -> CGFloat {
+        let room = maxPanelHeight - topPadding - bottomPadding - chrome - spacing
+        return max(0, min(content, resultsMaxHeight, max(resultsMinHeight, room)))
+    }
+
+    /// The panel's total height for a given chrome and results height (0 when there are no results).
+    static func panelHeight(chrome: CGFloat, results: CGFloat) -> CGFloat {
+        topPadding + chrome + (results > 0 ? spacing + results : 0) + bottomPadding
     }
 }
 

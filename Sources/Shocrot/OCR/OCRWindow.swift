@@ -39,6 +39,9 @@ final class OCRModel: ObservableObject {
 
 enum OCRWindow {
     private static var windows: [NSWindow] = []
+    /// One per open window: pulls it back inside its display after a drag or resize past an edge.
+    private static var keepers: [ObjectIdentifier: OnScreenKeeper] = [:]
+    private static let preferredMinSize = CGSize(width: 620, height: 380)
 
     static func show(model: OCRModel) {
         let host = NSHostingController(rootView: OCRView(model: model))
@@ -49,11 +52,14 @@ enum OCRWindow {
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.setContentSize(CGSize(width: 880, height: 540))
-        window.minSize = CGSize(width: 620, height: 380)
-        window.center()
-        if let last = windows.last { window.setFrameTopLeftPoint(CGPoint(x: last.frame.minX + 24, y: last.frame.maxY - 24)) }
+        let frame = initialFrame(for: window)
+        // A display smaller than the usual minimum still gets a window that fits it.
+        window.minSize = CGSize(width: min(preferredMinSize.width, frame.width),
+                                height: min(preferredMinSize.height, frame.height))
+        window.setFrame(frame, display: false)
         windows.append(window)
+        let id = ObjectIdentifier(window)
+        keepers[id] = MainActor.assumeIsolated { OnScreenKeeper(window: window, canShrink: true) }
         // The observer goes with the window: left registered, its block would keep the window, the model
         // and the whole capture alive after closing.
         var observer: NSObjectProtocol?
@@ -62,10 +68,30 @@ enum OCRWindow {
             if let observer { NotificationCenter.default.removeObserver(observer) }
             observer = nil
             windows.removeAll { $0 === window }
+            keepers[id] = nil
             FocusReturn.windowDidGoAway()
         }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
+    }
+
+    /// Centred on the display under the pointer (where the capture or the History window is), not wherever
+    /// `center()` would put a new window; a further window cascades from the last one on that display.
+    /// Always inside the display's visible frame, so the title bar can be reached and dragged.
+    private static func initialFrame(for window: NSWindow) -> CGRect {
+        let preferred = CGSize(width: 880, height: 540)
+        guard let vf = WindowPlacement.mouseScreen?.visibleFrame else {
+            return CGRect(origin: window.frame.origin, size: preferred)
+        }
+        let inset = WindowPlacement.margin
+        let size = CGSize(width: min(preferred.width, vf.width - 2 * inset),
+                          height: min(preferred.height, vf.height - 2 * inset))
+        var frame = CGRect(x: vf.midX - size.width / 2, y: vf.midY - size.height / 2,
+                           width: size.width, height: size.height)
+        if let last = windows.last(where: { vf.intersects($0.frame) }) {
+            frame.origin = CGPoint(x: last.frame.minX + 24, y: last.frame.maxY - 24 - size.height)
+        }
+        return WindowPlacement.fit(frame, in: vf)
     }
 }
 

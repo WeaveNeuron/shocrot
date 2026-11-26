@@ -323,7 +323,9 @@
 "translate.recognizing" = "Recognizing text…";
 "translate.placeholder" = "Type text: ↩ to translate, ⇧↩ for a new line, ⇧⌘C to copy the translation";
 "translate.detected" = "Detected %@";
+"translate.sourceLooksLike" = "%1$@ · looks like %2$@";
 "translate.speak" = "Read Aloud";
+"translate.stopSpeaking" = "Stop Reading";
 "translate.copySource" = "Copy Original";
 "translate.clear" = "Clear";
 "translate.autoDetect" = "Detect Language";
