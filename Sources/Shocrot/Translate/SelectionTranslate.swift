@@ -429,7 +429,6 @@ final class SelectionTranslateController {
     private var mouseMonitor: Any?
     private var dismissMonitors: [Any] = []
     private var appObserver: NSObjectProtocol?
-    private var settingsObserver: AnyCancellable?
 
     private var mouseDownPoint: CGPoint?
     private var mouseDownAppPID: pid_t?
@@ -442,21 +441,7 @@ final class SelectionTranslateController {
     private let popoverModel = SelectionTranslateModel()
 
     func start() {
-        settingsObserver = Settings.shared.$selectionTranslateEnabled
-            .removeDuplicates()
-            .sink { [weak self] enabled in
-                Task { @MainActor in self?.setEnabled(enabled) }
-            }
-        setEnabled(Settings.shared.selectionTranslateEnabled)
-    }
-
-    func setEnabled(_ enabled: Bool) {
-        if enabled {
-            installMouseMonitor()
-        } else {
-            removeMouseMonitor()
-            dismissAll()
-        }
+        installMouseMonitor()
     }
 
     func dismissAll() {
@@ -486,13 +471,7 @@ final class SelectionTranslateController {
         }
     }
 
-    private func removeMouseMonitor() {
-        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
-        mouseMonitor = nil
-    }
-
     private func handleGlobalMouse(type: NSEvent.EventType, location: CGPoint, clickCount: Int) {
-        guard Settings.shared.selectionTranslateEnabled else { return }
         if type == .leftMouseDown {
             // Clicking outside our floating panels dismisses them immediately.
             if !pointInsideOwnPanels(location) {

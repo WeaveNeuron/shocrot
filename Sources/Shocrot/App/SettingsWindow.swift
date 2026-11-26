@@ -416,7 +416,6 @@ private struct TranslateSettings: View {
                 Picker(L("settings.translate.secondary"), selection: $s.secondaryLanguage) {
                     ForEach(Language.all) { Text($0.name).tag($0.code) }
                 }
-                Toggle(L("settings.translate.selectionIcon"), isOn: $s.selectionTranslateEnabled)
             } footer: {
                 Text(L("settings.translate.languagesFooter")).font(.caption).foregroundStyle(.secondary)
             }

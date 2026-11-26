@@ -145,7 +145,9 @@ struct SelectionAutoDismissTests {
         var fired = 0
         let timer = SelectionAutoDismiss(delay: 0.04, resumeDelay: 0.04) { fired += 1 }
         timer.start()
-        try? await Task.sleep(for: .milliseconds(90))
+        for _ in 0..<40 where fired == 0 {
+            try? await Task.sleep(for: .milliseconds(15))
+        }
         #expect(fired == 1)
 
         // Cancelled timer does not fire.
@@ -164,7 +166,9 @@ struct SelectionAutoDismissTests {
         #expect(fired == 0 && timer.isPaused)
 
         timer.setHovering(false)
-        try? await Task.sleep(for: .milliseconds(90))
+        for _ in 0..<40 where fired == 0 {
+            try? await Task.sleep(for: .milliseconds(15))
+        }
         #expect(fired == 1 && !timer.isPaused)
     }
 

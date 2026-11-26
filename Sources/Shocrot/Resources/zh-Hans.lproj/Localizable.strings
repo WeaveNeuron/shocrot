@@ -263,7 +263,6 @@
 
 "settings.translate.primary" = "首选语言";
 "settings.translate.secondary" = "第二语言";
-"settings.translate.selectionIcon" = "划词后显示翻译图标";
 "settings.translate.languagesFooter" = "首选语言的文字译为第二语言，其他语言一律译为首选语言。";
 "settings.translate.enableApple" = "启用 Apple 翻译（离线，免费）";
 "settings.translate.manageLanguages" = "管理离线语言…";
