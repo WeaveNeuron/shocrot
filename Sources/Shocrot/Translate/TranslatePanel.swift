@@ -47,13 +47,12 @@ final class TranslatePanel: NSPanel, HeaderDraggable {
         if shared == nil { shared = TranslatePanel() }
     }
 
-    /// Opens the panel immediately in a "recognizing" state; follow up with `show(text:near:)`.
+    /// Opens the panel immediately in a "recognizing" state with stable placeholder sizing; follow up with `show(text:near:)`.
     @MainActor
     static func showRecognizing(near anchor: CGRect?) {
         let panel = shared ?? TranslatePanel()
         shared = panel
-        panel.model.clear()
-        panel.model.isRecognizing = true
+        panel.model.beginRecognizing(selectionSize: anchor?.size)
         if panel.needsPlacing(near: anchor) { panel.place(near: anchor) }
         panel.orderFrontRegardless()
         panel.watchOutsideClicks()
@@ -63,9 +62,12 @@ final class TranslatePanel: NSPanel, HeaderDraggable {
     @MainActor
     static func cancelRecognizing() {
         guard let panel = shared, panel.model.isRecognizing else { return }
-        panel.model.isRecognizing = false
+        panel.model.clear()
         panel.dismissIfUnpinned()
     }
+
+    /// Callback invoked when the user dismisses the panel while OCR is still in flight.
+    static var onCancelRecognizing: (() -> Void)?
 
     /// Gets an unpinned panel out of the way, e.g. before a new screenshot.
     @MainActor
@@ -110,6 +112,16 @@ final class TranslatePanel: NSPanel, HeaderDraggable {
 
     override var canBecomeKey: Bool { true }
 
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        if flags == .command, event.charactersIgnoringModifiers == "," {
+            if !model.pinned { close() }
+            SettingsWindow.show(tab: .translate)
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     func headerDragDidBegin() { keptBottom = nil }
 
     override func cancelOperation(_ sender: Any?) { close() }
@@ -118,6 +130,11 @@ final class TranslatePanel: NSPanel, HeaderDraggable {
         clickMonitors.forEach(NSEvent.removeMonitor)
         clickMonitors.removeAll()
         Speaker.shared.stop()
+        if model.isRecognizing {
+            model.endRecognizing()
+            Self.onCancelRecognizing?()
+        }
+        NotificationCenter.default.post(name: .translatePanelWillClose, object: nil)
         super.close()
     }
 
@@ -222,6 +239,23 @@ enum TranslatePanelLayout {
         min(max(natural, inputMinHeight), inputMaxHeight)
     }
 
+    /// Stable input height while screenshot OCR is in flight, estimated from the captured selection's height so
+    /// the panel opens close to its settled height instead of starting cramped and jumping when text arrives.
+    static func estimatedInputHeight(forSelection size: CGSize?) -> CGFloat {
+        guard let size, size.width > 0, size.height > 0 else { return 76 }
+        return min(inputMaxHeight, max(64, (size.height * 0.78).rounded()))
+    }
+
+    /// Minimum content height reserved inside a loading `ResultCard` so the panel doesn't shrink-then-grow as
+    /// OCR and translation results arrive. Scales with the input box height and divides budget across multiple services.
+    static func estimatedResultTextHeight(forInputHeight inputHeight: CGFloat, serviceCount: Int) -> CGFloat {
+        let count = max(1, serviceCount)
+        let perCardMax: CGFloat = count == 1 ? 150 : 96
+        let perCardMin: CGFloat = count == 1 ? 64 : 48
+        let ratio: CGFloat = count == 1 ? 0.95 : 0.72
+        return min(perCardMax, max(perCardMin, (inputHeight * ratio).rounded()))
+    }
+
     /// Text taller than the editor scrolls; its bottom edge then fades out over this height, a hint that there
     /// is more below.
     static let inputFadeHeight: CGFloat = 18
@@ -257,4 +291,5 @@ enum TranslatePanelLayout {
 
 extension Notification.Name {
     static let focusTranslateInput = Notification.Name("ShocrotFocusTranslateInput")
+    static let translatePanelWillClose = Notification.Name("ShocrotTranslatePanelWillClose")
 }
