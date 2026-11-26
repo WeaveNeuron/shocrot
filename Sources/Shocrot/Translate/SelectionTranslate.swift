@@ -983,22 +983,38 @@ private final class NonActivatingPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-// MARK: - SwiftUI Views (Liquid Glass)
+// MARK: - SwiftUI Views (macOS 26 Frosted Glass)
 
 private struct SelectionTriggerView: View {
     let onHover: (Bool) -> Void
     let onTap: () -> Void
     @State private var hovering = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var surfaceFill: Color {
+        if colorScheme == .dark {
+            return Color(white: 0.19).opacity(hovering ? 0.95 : 0.88)
+        }
+        return Color(white: 0.99).opacity(hovering ? 0.97 : 0.93)
+    }
+
+    private var borderColor: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(hovering ? 0.30 : 0.18)
+            : Color.black.opacity(hovering ? 0.22 : 0.14)
+    }
 
     var body: some View {
         Button(action: onTap) {
             Image(systemName: "translate")
-                .font(.system(size: 13.5, weight: .semibold))
-                .foregroundStyle(hovering ? Color.accentColor : Color.primary)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(hovering ? Color.accentColor : Color(nsColor: .labelColor))
                 .frame(width: SelectionPopupLayout.iconSize.width, height: SelectionPopupLayout.iconSize.height)
-                .glassEffect(.regular.tint(Color(nsColor: .windowBackgroundColor).opacity(hovering ? 0.85 : 0.72)), in: .circle)
-                .overlay(Circle().strokeBorder(.primary.opacity(hovering ? 0.22 : 0.12), lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.22), radius: 6, y: 2)
+                .background(Circle().fill(.thickMaterial))
+                .background(Circle().fill(surfaceFill))
+                .glassEffect(.regular, in: .circle)
+                .overlay(Circle().strokeBorder(borderColor, lineWidth: 0.75))
+                .shadow(color: .black.opacity(colorScheme == .dark ? 0.36 : 0.16), radius: 5, y: 2)
                 .scaleEffect(hovering ? 1.06 : 1)
                 .contentShape(Circle())
         }
@@ -1023,16 +1039,40 @@ private struct SelectionPopoverView: View {
     let onHeightChange: (CGFloat) -> Void
 
     @ObservedObject private var speaker = Speaker.shared
+    @Environment(\.colorScheme) private var colorScheme
     @State private var copied = false
     @State private var downloadRequest: TranslationSession.Configuration?
 
     private var showsServiceHeaders: Bool { model.entries.count > 1 }
+    private static let cornerRadius: CGFloat = 14
+
+    /// High-opacity elevated backing layered over thick material + Liquid Glass so dense body text
+    /// underneath never bleeds through while retaining macOS 26 depth in both Dark and Light appearances.
+    private var surfaceBacking: Color {
+        colorScheme == .dark
+            ? Color(white: 0.165).opacity(0.90)
+            : Color(white: 0.985).opacity(0.93)
+    }
+
+    private var borderStroke: LinearGradient {
+        if colorScheme == .dark {
+            return LinearGradient(
+                colors: [Color.white.opacity(0.24), Color.white.opacity(0.10)],
+                startPoint: .top, endPoint: .bottom
+            )
+        }
+        return LinearGradient(
+            colors: [Color.black.opacity(0.11), Color.black.opacity(0.16)],
+            startPoint: .top, endPoint: .bottom
+        )
+    }
 
     var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
         VStack(alignment: .leading, spacing: 8) {
             if !model.hasServices {
                 HStack {
-                    Text(L("translate.noServices")).font(.callout).foregroundStyle(.secondary)
+                    Text(L("translate.noServices")).font(.callout).foregroundStyle(Color(nsColor: .secondaryLabelColor))
                     Spacer(minLength: 8)
                     Button(L("translate.openSettings"), action: onOpenSettings)
                         .buttonStyle(.glass)
@@ -1047,7 +1087,7 @@ private struct SelectionPopoverView: View {
                                     Image(systemName: entry.symbol).font(.system(size: 10.5))
                                     Text(entry.name).font(.system(size: 11, weight: .semibold))
                                 }
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                             }
                             entryContent(entry)
                             if showsServiceHeaders && entry.id != model.entries.last?.id {
@@ -1065,8 +1105,8 @@ private struct SelectionPopoverView: View {
             HStack(spacing: 2) {
                 if let target = model.resolvedTarget {
                     Text(target.name)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 6)
@@ -1086,12 +1126,17 @@ private struct SelectionPopoverView: View {
             }
             .frame(height: 20)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 13)
+        .padding(.vertical, 11)
         .frame(width: SelectionPopupLayout.popoverWidth)
-        .glassEffect(.regular.tint(Color(nsColor: .windowBackgroundColor).opacity(0.76)),
-                     in: .rect(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.primary.opacity(0.1), lineWidth: 0.5))
+        .background {
+            ZStack {
+                shape.fill(.thickMaterial)
+                shape.fill(surfaceBacking)
+            }
+        }
+        .glassEffect(.regular, in: shape)
+        .overlay(shape.strokeBorder(borderStroke, lineWidth: 0.75))
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { onHeightChange($0) }
         .translationTask(downloadRequest) { session in
             try? await session.prepareTranslation()
@@ -1108,7 +1153,7 @@ private struct SelectionPopoverView: View {
                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                 Text(error.localizedDescription)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(nsColor: .secondaryLabelColor))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 4)
                 switch (error as? TranslationFailure)?.recovery {
@@ -1123,15 +1168,16 @@ private struct SelectionPopoverView: View {
         } else if !entry.text.isEmpty {
             Text(entry.text)
                 .font(.system(size: 13.5))
+                .foregroundStyle(Color(nsColor: .labelColor))
                 .lineSpacing(3)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             VStack(alignment: .leading, spacing: 7) {
-                RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(.primary.opacity(0.08))
+                RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(.primary.opacity(0.10))
                     .frame(width: 240, height: 11)
-                RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(.primary.opacity(0.06))
+                RoundedRectangle(cornerRadius: 3.5, style: .continuous).fill(.primary.opacity(0.07))
                     .frame(width: 170, height: 11)
             }
             .padding(.vertical, 2)
@@ -1158,11 +1204,11 @@ private struct PopoverIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(hovering ? Color(nsColor: .labelColor) : Color(nsColor: .secondaryLabelColor))
                 .frame(width: 22, height: 20)
                 .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(hovering ? Color.primary.opacity(0.09) : .clear))
+                    .fill(hovering ? Color.primary.opacity(0.10) : .clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
