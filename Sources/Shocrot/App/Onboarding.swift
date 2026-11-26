@@ -2,8 +2,10 @@ import AppKit
 import Combine
 import SwiftUI
 
+@MainActor
 enum OnboardingWindow {
     private static var window: NSWindow?
+    private static var keeper: OnScreenKeeper?
 
     static func show() {
         if window == nil {
@@ -16,11 +18,13 @@ enum OnboardingWindow {
             w.titleVisibility = .hidden
             w.isMovableByWindowBackground = true
             w.isReleasedWhenClosed = false
-            w.center()
+            w.collectionBehavior.insert(.moveToActiveSpace)
+            w.layoutIfNeeded()
+            keeper = OnScreenKeeper(window: w)
             window = w
         }
-        NSApp.activate()
-        window?.makeKeyAndOrderFront(nil)
+        guard let window else { return }
+        WindowPresentation.present(window, centerOnMouseScreenWhenHidden: true)
     }
 
     static func close() { window?.close() }

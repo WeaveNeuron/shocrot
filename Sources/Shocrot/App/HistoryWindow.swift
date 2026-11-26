@@ -1,8 +1,10 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 enum HistoryWindow {
     private static var window: NSWindow?
+    private static var keeper: OnScreenKeeper?
 
     static func show() {
         if window == nil {
@@ -12,14 +14,20 @@ enum HistoryWindow {
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden
             w.isReleasedWhenClosed = false
+            w.collectionBehavior.insert(.moveToActiveSpace)
             w.setContentSize(CGSize(width: 820, height: 560))
             w.minSize = CGSize(width: 480, height: 360)
-            w.center()
+            if let vf = WindowPlacement.mouseScreen?.visibleFrame {
+                w.setFrame(WindowPresentation.centeredFrame(size: w.frame.size, in: vf), display: false)
+            } else {
+                w.center()
+            }
             w.setFrameAutosaveName("ShocrotHistory")
+            keeper = OnScreenKeeper(window: w, canShrink: true)
             window = w
         }
-        NSApp.activate()
-        window?.makeKeyAndOrderFront(nil)
+        guard let window else { return }
+        WindowPresentation.present(window)
     }
 }
 
