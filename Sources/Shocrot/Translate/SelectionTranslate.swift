@@ -29,11 +29,13 @@ enum SelectionSecurity {
 /// CoreGraphics / Accessibility coordinates have origin at the top-left of the primary display (y down).
 enum SelectionPopupLayout {
     static let margin: CGFloat = 8
-    static let iconGap: CGFloat = 6
+    static let iconGap: CGFloat = 8
+    static let iconVerticalGap: CGFloat = 6
     static let popoverGap: CGFloat = 8
     static let dragThreshold: CGFloat = 6
-    static let iconSize = CGSize(width: 30, height: 30)
+    static let iconSize = CGSize(width: 28, height: 28)
     static let iconCanvasInset: CGFloat = 10 // shadow breathing room around the floating icon
+    static let adjacentLineClearanceLimit: CGFloat = 160
     static let popoverWidth: CGFloat = 320
     static let popoverMaxHeight: CGFloat = 280
     static let iconAutoDismissSeconds: TimeInterval = 4.5
@@ -66,49 +68,151 @@ enum SelectionPopupLayout {
         return trimmed
     }
 
-    /// Computes the vertical line band near `mouseUp`: uses single-line AX bounds when they agree with the cursor,
-    /// otherwise estimates a line around `mouseUp.y` so multi-line drags stay right where the user released.
-    static func lineBand(mouseUp: CGPoint, selectionBounds: CGRect?) -> (minY: CGFloat, maxY: CGFloat) {
-        if let b = selectionBounds, b.width > 0, b.height > 0, b.height <= 38, abs(mouseUp.y - b.midY) <= 44 {
-            return (b.minY, b.maxY)
+    /// Trims leading spaces/tabs and trailing whitespace/newlines from an AX line range (UTF-16 offsets)
+    /// so `AXBoundsForRange` measures only the visible glyphs on that line and never spills onto the next line.
+    static func trimmedLineRange(_ range: CFRange, text: String) -> CFRange? {
+        let ns = text as NSString
+        guard ns.length > 0, range.length > 0 else { return nil }
+        var start = 0
+        var end = min(ns.length, range.length)
+        let leadingWS = CharacterSet(charactersIn: " \t")
+        while start < end, let scalar = UnicodeScalar(ns.character(at: start)), leadingWS.contains(scalar) {
+            start += 1
+        }
+        let trailingWS = CharacterSet.whitespacesAndNewlines
+        while end > start, let scalar = UnicodeScalar(ns.character(at: end - 1)), trailingWS.contains(scalar) {
+            end -= 1
+        }
+        guard end > start else { return nil }
+        return CFRange(location: range.location + start, length: end - start)
+    }
+
+    /// Expands a line's horizontal clearance past ragged-edge adjacent lines (within `adjacentLineClearanceLimit`)
+    /// whenever an icon vertically centered on `line` would vertically overlap those neighbors, and optionally
+    /// clips to a scroll container's visible frame so horizontally scrolled lines stay anchored to the visible edge.
+    static func clearedLineBounds(_ line: CGRect, adjacentLines: [CGRect],
+                                  iconHeight: CGFloat = iconSize.height,
+                                  container: CGRect? = nil) -> CGRect {
+        func clipped(_ rect: CGRect) -> CGRect {
+            guard let container, container.width > 0, container.height > 0, rect.intersects(container) else { return rect }
+            let minX = max(rect.minX, container.minX)
+            let maxX = min(rect.maxX, container.maxX)
+            guard maxX > minX else { return rect }
+            return CGRect(x: minX, y: rect.minY, width: maxX - minX, height: rect.height)
+        }
+        let base = clipped(line)
+        var outMinX = base.minX
+        var outMaxX = base.maxX
+        let iconMinY = base.midY - iconHeight / 2 - 1
+        let iconMaxY = base.midY + iconHeight / 2 + 1
+
+        for rawAdj in adjacentLines where rawAdj.width > 0 && rawAdj.height > 0 {
+            let adj = clipped(rawAdj)
+            guard adj.maxY > iconMinY && adj.minY < iconMaxY else { continue }
+            if adj.maxX > outMaxX, adj.maxX - base.maxX <= adjacentLineClearanceLimit {
+                outMaxX = adj.maxX
+            }
+            if adj.minX < outMinX, base.minX - adj.minX <= adjacentLineClearanceLimit {
+                outMinX = adj.minX
+            }
+        }
+        return CGRect(x: outMinX, y: base.minY, width: max(1, outMaxX - outMinX), height: base.height)
+    }
+
+    /// Returns the best single-line rect for the release point: prefers AX `lineBounds` when valid and near
+    /// `mouseUp.y`, otherwise falls back to single-line `selectionBounds`.
+    static func effectiveLineRect(mouseUp: CGPoint, selectionBounds: CGRect?, lineBounds: CGRect?) -> CGRect? {
+        if let line = lineBounds, line.width > 0, line.height > 0, line.height <= 80,
+           abs(mouseUp.y - line.midY) <= 60 {
+            return line
+        }
+        if let sel = selectionBounds, sel.width > 0, sel.height > 0, sel.height <= 44,
+           abs(mouseUp.y - sel.midY) <= 44 {
+            return sel
+        }
+        return nil
+    }
+
+    /// True when the gesture released at the start of the selection (right→left drag on a line, or upward multi-line drag).
+    static func isAnchoredAtStart(mouseDown: CGPoint, mouseUp: CGPoint, selectionBounds: CGRect?) -> Bool {
+        if let sel = selectionBounds, sel.height > 38, abs(mouseUp.y - mouseDown.y) > 12 {
+            // AppKit Y grows upward: releasing higher than mouseDown means dragging backward to the start.
+            return mouseUp.y > mouseDown.y
+        }
+        return (mouseUp.x - mouseDown.x) < -dragThreshold
+    }
+
+    /// Computes the vertical line band near `mouseUp`: uses AX line or single-line selection bounds when they agree
+    /// with the cursor, otherwise estimates a line around `mouseUp.y` so multi-line drags stay where the user released.
+    static func lineBand(mouseUp: CGPoint, selectionBounds: CGRect?, lineBounds: CGRect? = nil) -> (minY: CGFloat, maxY: CGFloat) {
+        if let line = effectiveLineRect(mouseUp: mouseUp, selectionBounds: selectionBounds, lineBounds: lineBounds) {
+            return (line.minY, line.maxY)
         }
         return (mouseUp.y - 11, mouseUp.y + 13)
     }
 
-    /// Places the small trigger icon right beside where the mouse was released:
-    /// dragging left→right puts it at the end (right of `mouseUp`); dragging right→left puts it at the start
-    /// (left of `mouseUp`). Vertically sits just below the line (flipping above if near the bottom edge).
+    /// Places the trigger icon beside the selection's line without covering any text:
+    /// - Left→right (or multi-click): to the right of the line's trailing edge, vertically centered on that line.
+    /// - Right→left (or upward multi-line): to the left of the line's leading edge, vertically centered on that line.
+    /// - When horizontal room beside the line is insufficient (or AX line bounds are unavailable), falls back above
+    ///   the line near the release edge, and below only if the line is against the top edge of the display.
     static func iconFrame(mouseDown: CGPoint, mouseUp: CGPoint, selectionBounds: CGRect?,
+                          lineBounds: CGRect? = nil,
                           size: CGSize = iconSize, in visible: CGRect, margin: CGFloat = margin) -> CGRect {
-        let band = lineBand(mouseUp: mouseUp, selectionBounds: selectionBounds)
-        let dx = mouseUp.x - mouseDown.x
-        let rawX: CGFloat
-        if dx < -dragThreshold {
-            // Right-to-left drag: mouse released at the start of selection -> icon sits at the start.
-            rawX = mouseUp.x - size.width - 4
-        } else {
-            // Left-to-right drag or multi-click: mouse released at the end -> icon sits at the end.
-            rawX = mouseUp.x + 4
+        let bounds = visible.insetBy(dx: margin, dy: margin)
+        let anchorAtStart = isAnchoredAtStart(mouseDown: mouseDown, mouseUp: mouseUp, selectionBounds: selectionBounds)
+        let line = effectiveLineRect(mouseUp: mouseUp, selectionBounds: selectionBounds, lineBounds: lineBounds)
+
+        if let line {
+            let centeredY = min(max(line.midY - size.height / 2, bounds.minY),
+                                max(bounds.minY, bounds.maxY - size.height))
+            if anchorAtStart {
+                let leftX = line.minX - iconGap - size.width
+                if leftX >= bounds.minX {
+                    return CGRect(x: leftX.rounded(), y: centeredY.rounded(), width: size.width, height: size.height)
+                }
+            } else {
+                let rightX = line.maxX + iconGap
+                if rightX + size.width <= bounds.maxX {
+                    return CGRect(x: rightX.rounded(), y: centeredY.rounded(), width: size.width, height: size.height)
+                }
+            }
         }
 
-        let bounds = visible.insetBy(dx: margin, dy: margin)
-        let belowY = band.minY - iconGap - size.height
-        let aboveY = band.maxY + iconGap
-        let y = belowY >= bounds.minY ? belowY : min(aboveY, bounds.maxY - size.height)
+        let band = line.map { (minY: $0.minY, maxY: $0.maxY) }
+            ?? lineBand(mouseUp: mouseUp, selectionBounds: selectionBounds, lineBounds: lineBounds)
+        let rawX: CGFloat
+        if anchorAtStart {
+            rawX = (selectionBounds?.height ?? 999) <= 44 ? (selectionBounds?.minX ?? mouseUp.x) : mouseUp.x
+        } else {
+            let anchorRight = (selectionBounds?.height ?? 999) <= 44 ? (selectionBounds?.maxX ?? mouseUp.x) : mouseUp.x
+            rawX = anchorRight - size.width
+        }
         let x = min(max(rawX, bounds.minX), max(bounds.minX, bounds.maxX - size.width))
-        return CGRect(x: x.rounded(), y: max(bounds.minY, y).rounded(), width: size.width, height: size.height)
+        let aboveY = band.maxY + iconVerticalGap
+        let belowY = band.minY - iconVerticalGap - size.height
+        let y: CGFloat
+        if aboveY + size.height <= bounds.maxY {
+            y = aboveY
+        } else if belowY >= bounds.minY {
+            y = belowY
+        } else {
+            y = max(bounds.minY, min(aboveY, bounds.maxY - size.height))
+        }
+        return CGRect(x: x.rounded(), y: y.rounded(), width: size.width, height: size.height)
     }
 
     /// Places the compact translation-only popover near the mouseUp anchor, preferring directly below the line,
     /// flipping above if there isn't room below, and clamping strictly inside the display's visible frame.
     static func popoverFrame(mouseDown: CGPoint, mouseUp: CGPoint, selectionBounds: CGRect?,
+                             lineBounds: CGRect? = nil,
                              size: CGSize, in visible: CGRect, margin: CGFloat = margin) -> CGRect {
-        let band = lineBand(mouseUp: mouseUp, selectionBounds: selectionBounds)
+        let band = lineBand(mouseUp: mouseUp, selectionBounds: selectionBounds, lineBounds: lineBounds)
         let bounds = visible.insetBy(dx: margin, dy: margin)
-        let dx = mouseUp.x - mouseDown.x
+        let anchorAtStart = isAnchoredAtStart(mouseDown: mouseDown, mouseUp: mouseUp, selectionBounds: selectionBounds)
         // Align popover's leading/trailing edge naturally with the drag release side.
         let rawX: CGFloat
-        if dx < -dragThreshold {
+        if anchorAtStart {
             rawX = mouseUp.x - 16
         } else {
             rawX = mouseUp.x - size.width * 0.35
@@ -187,6 +291,9 @@ struct AXSelectionSnapshot {
     let text: String
     /// Selection bounds in AppKit global points (if the target app reports `AXBoundsForRange` / marker bounds).
     let bounds: CGRect?
+    /// Full visual line bounds containing the release endpoint (AppKit global points), cleared past any overlapping
+    /// ragged-edge adjacent line so a vertically centered icon beside this line covers zero text.
+    let lineBounds: CGRect?
 }
 
 /// Reads selected text and its screen bounds strictly via Accessibility APIs. Never simulates ⌘C or touches the clipboard.
@@ -196,17 +303,20 @@ enum AXSelectionReader {
     static var isTrusted: Bool { AXIsProcessTrusted() }
 
     /// Reads the frontmost app's current selection on a background queue so a slow target app never stalls the UI.
-    static func readSelection(pid: pid_t, atAppKitPoint point: CGPoint?, primaryScreenHeight: CGFloat) async -> AXSelectionSnapshot? {
+    static func readSelection(pid: pid_t, atAppKitPoint point: CGPoint?, mouseDown: CGPoint? = nil,
+                              primaryScreenHeight: CGFloat) async -> AXSelectionSnapshot? {
         guard isTrusted, !SelectionSecurity.isSecureInputEnabled else { return nil }
         return await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
-                let result = readSelectionSync(pid: pid, atAppKitPoint: point, primaryScreenHeight: primaryScreenHeight)
+                let result = readSelectionSync(pid: pid, atAppKitPoint: point, mouseDown: mouseDown,
+                                               primaryScreenHeight: primaryScreenHeight)
                 cont.resume(returning: result)
             }
         }
     }
 
-    static func readSelectionSync(pid: pid_t, atAppKitPoint point: CGPoint?, primaryScreenHeight: CGFloat) -> AXSelectionSnapshot? {
+    static func readSelectionSync(pid: pid_t, atAppKitPoint point: CGPoint?, mouseDown: CGPoint? = nil,
+                                  primaryScreenHeight: CGFloat) -> AXSelectionSnapshot? {
         guard isTrusted, !SelectionSecurity.isSecureInputEnabled else { return nil }
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.15)
@@ -232,19 +342,24 @@ enum AXSelectionReader {
         }
 
         for candidate in candidates {
-            if let snapshot = extract(from: candidate, primaryScreenHeight: primaryScreenHeight) {
+            if let snapshot = extract(from: candidate, mouseDown: mouseDown, mouseUp: point,
+                                      primaryScreenHeight: primaryScreenHeight) {
                 return snapshot
             }
         }
         return nil
     }
 
-    private static func extract(from element: AXUIElement, primaryScreenHeight: CGFloat) -> AXSelectionSnapshot? {
+    private static func extract(from element: AXUIElement, mouseDown: CGPoint?, mouseUp: CGPoint?,
+                                primaryScreenHeight: CGFloat) -> AXSelectionSnapshot? {
         AXUIElementSetMessagingTimeout(element, 0.15)
         let rawText = selectedText(of: element)
         guard let text = SelectionPopupLayout.cleanedSelection(rawText) else { return nil }
         let bounds = selectionBounds(of: element, primaryScreenHeight: primaryScreenHeight)
-        return AXSelectionSnapshot(text: text, bounds: bounds)
+        let lineBounds = selectionLineBounds(of: element, selectionBounds: bounds,
+                                             mouseDown: mouseDown, mouseUp: mouseUp,
+                                             primaryScreenHeight: primaryScreenHeight)
+        return AXSelectionSnapshot(text: text, bounds: bounds, lineBounds: lineBounds)
     }
 
     /// Tries standard AXSelectedText, then AXSelectedTextRange + AXStringForRange, then WebKit marker range,
@@ -286,28 +401,210 @@ enum AXSelectionReader {
         guard primaryScreenHeight > 0 else { return nil }
         if let rangeValue = rawAttribute(element, kAXSelectedTextRangeAttribute),
            CFGetTypeID(rangeValue) == AXValueGetTypeID() {
-            var out: CFTypeRef?
-            if AXUIElementCopyParameterizedAttributeValue(element, kAXBoundsForRangeParameterizedAttribute as CFString,
-                                                          rangeValue, &out) == .success,
-               let val = out, CFGetTypeID(val) == AXValueGetTypeID() {
-                var cgRect = CGRect.zero
-                if AXValueGetValue(val as! AXValue, .cgRect, &cgRect), cgRect.width > 0, cgRect.height > 0 {
-                    return SelectionPopupLayout.cgRectToAppKit(cgRect, primaryScreenHeight: primaryScreenHeight)
+            if let rect = boundsForRangeValue(rangeValue, in: element, primaryScreenHeight: primaryScreenHeight) {
+                return rect
+            }
+        }
+        if let markerRange = rawAttribute(element, "AXSelectedTextMarkerRange"),
+           let rect = boundsForMarkerRange(markerRange, in: element, primaryScreenHeight: primaryScreenHeight) {
+            return rect
+        }
+        return nil
+    }
+
+    /// Reads the full visual line bounds containing the drag release endpoint via standard Cocoa AX
+    /// (`AXLineForIndex` / `AXRangeForLine` / `AXBoundsForRange`) or WebKit AX (`AXLineTextMarkerRangeForTextMarker`
+    /// / `AXBoundsForTextMarkerRange`), including adjacent-line clearance for wrapped paragraphs.
+    private static func selectionLineBounds(of element: AXUIElement, selectionBounds: CGRect?,
+                                            mouseDown: CGPoint?, mouseUp: CGPoint?,
+                                            primaryScreenHeight: CGFloat) -> CGRect? {
+        guard primaryScreenHeight > 0 else { return nil }
+        let container = containerFrame(of: element, primaryScreenHeight: primaryScreenHeight)
+
+        // Path A: Standard Cocoa text ranges (TextEdit, Notes, Xcode, Mail, etc.)
+        if let rangeValue = rawAttribute(element, kAXSelectedTextRangeAttribute),
+           CFGetTypeID(rangeValue) == AXValueGetTypeID() {
+            var cfRange = CFRange(location: 0, length: 0)
+            if AXValueGetValue(rangeValue as! AXValue, .cfRange, &cfRange), cfRange.length > 0 {
+                let firstRect = boundsForCFRange(CFRange(location: cfRange.location, length: 1),
+                                                 in: element, primaryScreenHeight: primaryScreenHeight)
+                let lastIndex = cfRange.location + cfRange.length - 1
+                let lastRect = cfRange.length == 1
+                    ? firstRect
+                    : boundsForCFRange(CFRange(location: lastIndex, length: 1),
+                                       in: element, primaryScreenHeight: primaryScreenHeight)
+                let useStart = prefersStartEndpoint(firstRect: firstRect, lastRect: lastRect,
+                                                    selectionBounds: selectionBounds,
+                                                    mouseDown: mouseDown, mouseUp: mouseUp)
+                let anchorIndex = useStart ? cfRange.location : lastIndex
+
+                if let lineNum = lineNumber(forIndex: anchorIndex, in: element),
+                   let lineRect = trimmedLineRect(forLine: lineNum, in: element, primaryScreenHeight: primaryScreenHeight) {
+                    var adjacent: [CGRect] = []
+                    if lineNum > 0, let prev = trimmedLineRect(forLine: lineNum - 1, in: element, primaryScreenHeight: primaryScreenHeight) {
+                        adjacent.append(prev)
+                    }
+                    if let next = trimmedLineRect(forLine: lineNum + 1, in: element, primaryScreenHeight: primaryScreenHeight) {
+                        adjacent.append(next)
+                    }
+                    return SelectionPopupLayout.clearedLineBounds(lineRect, adjacentLines: adjacent, container: container)
+                }
+
+                // Fallback for controls that expose AXBoundsForRange without AXLineForIndex (e.g. single-line fields).
+                if let sel = selectionBounds, sel.height <= 44 {
+                    return SelectionPopupLayout.clearedLineBounds(sel, adjacentLines: [], container: container)
+                }
+                if let endpoint = useStart ? (firstRect ?? lastRect) : (lastRect ?? firstRect) {
+                    return SelectionPopupLayout.clearedLineBounds(endpoint, adjacentLines: [], container: container)
                 }
             }
         }
-        if let markerRange = rawAttribute(element, "AXSelectedTextMarkerRange") {
-            var out: CFTypeRef?
-            if AXUIElementCopyParameterizedAttributeValue(element, "AXBoundsForTextMarkerRange" as CFString,
-                                                          markerRange, &out) == .success,
-               let val = out, CFGetTypeID(val) == AXValueGetTypeID() {
-                var cgRect = CGRect.zero
-                if AXValueGetValue(val as! AXValue, .cgRect, &cgRect), cgRect.width > 0, cgRect.height > 0 {
-                    return SelectionPopupLayout.cgRectToAppKit(cgRect, primaryScreenHeight: primaryScreenHeight)
+
+        // Path B: WebKit / Safari text markers (AXTextMarkerRange C API + AXWebConstants line queries)
+        if let markerRangeRaw = rawAttribute(element, "AXSelectedTextMarkerRange"),
+           CFGetTypeID(markerRangeRaw) == AXTextMarkerRangeGetTypeID() {
+            let markerRange = markerRangeRaw as! AXTextMarkerRange
+            let startMarker = AXTextMarkerRangeCopyStartMarker(markerRange)
+            let endMarker = AXTextMarkerRangeCopyEndMarker(markerRange)
+            let startLine = lineRect(forMarker: startMarker, preferLeft: false, in: element, primaryScreenHeight: primaryScreenHeight)
+            let endLine = lineRect(forMarker: endMarker, preferLeft: true, in: element, primaryScreenHeight: primaryScreenHeight)
+            let useStart = prefersStartEndpoint(firstRect: startLine, lastRect: endLine,
+                                                selectionBounds: selectionBounds,
+                                                mouseDown: mouseDown, mouseUp: mouseUp)
+            let chosenMarker = useStart ? startMarker : endMarker
+            if let chosenLine = useStart ? (startLine ?? endLine) : (endLine ?? startLine) {
+                var adjacent: [CGRect] = []
+                if let prevM = parameterizedAttribute(element, "AXPreviousLineStartTextMarkerForTextMarker", param: chosenMarker),
+                   let prevRect = lineRect(forMarker: prevM, preferLeft: false, in: element, primaryScreenHeight: primaryScreenHeight),
+                   abs(prevRect.midY - chosenLine.midY) > 4 {
+                    adjacent.append(prevRect)
                 }
+                if let nextM = parameterizedAttribute(element, "AXNextLineEndTextMarkerForTextMarker", param: chosenMarker),
+                   let nextRect = lineRect(forMarker: nextM, preferLeft: true, in: element, primaryScreenHeight: primaryScreenHeight),
+                   abs(nextRect.midY - chosenLine.midY) > 4 {
+                    adjacent.append(nextRect)
+                }
+                return SelectionPopupLayout.clearedLineBounds(chosenLine, adjacentLines: adjacent, container: container)
+            }
+        }
+
+        return nil
+    }
+
+    private static func prefersStartEndpoint(firstRect: CGRect?, lastRect: CGRect?, selectionBounds: CGRect?,
+                                             mouseDown: CGPoint?, mouseUp: CGPoint?) -> Bool {
+        if let firstRect, let lastRect, abs(firstRect.midY - lastRect.midY) > 6, let mouseUp {
+            let dFirst = hypot(mouseUp.x - firstRect.midX, mouseUp.y - firstRect.midY)
+            let dLast = hypot(mouseUp.x - lastRect.midX, mouseUp.y - lastRect.midY)
+            return dFirst < dLast
+        }
+        if let mouseDown, let mouseUp {
+            return SelectionPopupLayout.isAnchoredAtStart(mouseDown: mouseDown, mouseUp: mouseUp,
+                                                          selectionBounds: selectionBounds)
+        }
+        return false
+    }
+
+    private static func lineNumber(forIndex index: Int, in element: AXUIElement) -> Int? {
+        var out: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element, kAXLineForIndexParameterizedAttribute as CFString,
+                                                         NSNumber(value: index), &out) == .success,
+              let num = out as? NSNumber else { return nil }
+        return num.intValue
+    }
+
+    private static func trimmedLineRect(forLine lineNum: Int, in element: AXUIElement, primaryScreenHeight: CGFloat) -> CGRect? {
+        var rangeOut: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element, kAXRangeForLineParameterizedAttribute as CFString,
+                                                         NSNumber(value: lineNum), &rangeOut) == .success,
+              let rangeVal = rangeOut, CFGetTypeID(rangeVal) == AXValueGetTypeID() else { return nil }
+        var lineRange = CFRange(location: 0, length: 0)
+        guard AXValueGetValue(rangeVal as! AXValue, .cfRange, &lineRange), lineRange.length > 0 else { return nil }
+
+        var targetRange = lineRange
+        var strOut: CFTypeRef?
+        if AXUIElementCopyParameterizedAttributeValue(element, kAXStringForRangeParameterizedAttribute as CFString,
+                                                      rangeVal, &strOut) == .success,
+           let str = strOut as? String {
+            guard let trimmed = SelectionPopupLayout.trimmedLineRange(lineRange, text: str) else { return nil }
+            targetRange = trimmed
+        }
+        guard let rect = boundsForCFRange(targetRange, in: element, primaryScreenHeight: primaryScreenHeight),
+              rect.height <= 80 else { return nil }
+        return rect
+    }
+
+    private static func boundsForCFRange(_ range: CFRange, in element: AXUIElement, primaryScreenHeight: CGFloat) -> CGRect? {
+        var mutable = range
+        guard let axRange = AXValueCreate(.cfRange, &mutable) else { return nil }
+        return boundsForRangeValue(axRange, in: element, primaryScreenHeight: primaryScreenHeight)
+    }
+
+    private static func boundsForRangeValue(_ rangeValue: CFTypeRef, in element: AXUIElement, primaryScreenHeight: CGFloat) -> CGRect? {
+        var out: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element, kAXBoundsForRangeParameterizedAttribute as CFString,
+                                                         rangeValue, &out) == .success,
+              let val = out, CFGetTypeID(val) == AXValueGetTypeID() else { return nil }
+        var cgRect = CGRect.zero
+        guard AXValueGetValue(val as! AXValue, .cgRect, &cgRect), cgRect.width > 0, cgRect.height > 0 else { return nil }
+        return SelectionPopupLayout.cgRectToAppKit(cgRect, primaryScreenHeight: primaryScreenHeight)
+    }
+
+    private static func lineRect(forMarker marker: CFTypeRef, preferLeft: Bool,
+                                 in element: AXUIElement, primaryScreenHeight: CGFloat) -> CGRect? {
+        let primaryAttr = preferLeft
+            ? "AXLeftLineTextMarkerRangeForTextMarker"
+            : "AXRightLineTextMarkerRangeForTextMarker"
+        for attr in [primaryAttr, "AXLineTextMarkerRangeForTextMarker"] {
+            if let lineMR = parameterizedAttribute(element, attr, param: marker),
+               let rect = boundsForMarkerRange(lineMR, in: element, primaryScreenHeight: primaryScreenHeight),
+               rect.height <= 80 {
+                return rect
             }
         }
         return nil
+    }
+
+    private static func boundsForMarkerRange(_ markerRange: CFTypeRef, in element: AXUIElement, primaryScreenHeight: CGFloat) -> CGRect? {
+        var out: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element, "AXBoundsForTextMarkerRange" as CFString,
+                                                         markerRange, &out) == .success,
+              let val = out, CFGetTypeID(val) == AXValueGetTypeID() else { return nil }
+        var cgRect = CGRect.zero
+        guard AXValueGetValue(val as! AXValue, .cgRect, &cgRect), cgRect.width > 0, cgRect.height > 0 else { return nil }
+        return SelectionPopupLayout.cgRectToAppKit(cgRect, primaryScreenHeight: primaryScreenHeight)
+    }
+
+    /// Walks up to the nearest scroll/web viewport to bound horizontally scrolled lines.
+    private static func containerFrame(of element: AXUIElement, primaryScreenHeight: CGFloat) -> CGRect? {
+        var current: AXUIElement? = element
+        for _ in 0..<5 {
+            guard let el = current else { break }
+            let role = stringAttribute(el, kAXRoleAttribute)
+            if role == "AXScrollArea" || role == "AXWebArea" || role == "AXWindow" {
+                if let frame = elementFrame(el, primaryScreenHeight: primaryScreenHeight) {
+                    return frame
+                }
+            }
+            current = elementAttribute(el, kAXParentAttribute)
+        }
+        return elementFrame(element, primaryScreenHeight: primaryScreenHeight)
+    }
+
+    private static func elementFrame(_ element: AXUIElement, primaryScreenHeight: CGFloat) -> CGRect? {
+        guard let posVal = rawAttribute(element, kAXPositionAttribute), CFGetTypeID(posVal) == AXValueGetTypeID(),
+              let sizeVal = rawAttribute(element, kAXSizeAttribute), CFGetTypeID(sizeVal) == AXValueGetTypeID() else { return nil }
+        var origin = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(posVal as! AXValue, .cgPoint, &origin),
+              AXValueGetValue(sizeVal as! AXValue, .cgSize, &size),
+              size.width > 0, size.height > 0 else { return nil }
+        return SelectionPopupLayout.cgRectToAppKit(CGRect(origin: origin, size: size), primaryScreenHeight: primaryScreenHeight)
+    }
+
+    private static func parameterizedAttribute(_ element: AXUIElement, _ name: String, param: CFTypeRef) -> CFTypeRef? {
+        var out: CFTypeRef?
+        return AXUIElementCopyParameterizedAttributeValue(element, name as CFString, param, &out) == .success ? out : nil
     }
 
     private static func isProtectedElementOrAncestor(_ element: AXUIElement) -> Bool {
@@ -423,6 +720,7 @@ final class SelectionTranslateController {
         let mouseDown: CGPoint
         let mouseUp: CGPoint
         let selectionBounds: CGRect?
+        let lineBounds: CGRect?
         let screen: NSScreen
     }
 
@@ -506,11 +804,13 @@ final class SelectionTranslateController {
             guard !Task.isCancelled, let self else { return }
             guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { return }
             guard let snapshot = await AXSelectionReader.readSelection(pid: targetPID, atAppKitPoint: location,
+                                                                       mouseDown: down,
                                                                        primaryScreenHeight: primaryHeight) else { return }
             guard !Task.isCancelled else { return }
             guard NSWorkspace.shared.frontmostApplication?.processIdentifier == targetPID else { return }
             self.showIcon(for: PendingContext(text: snapshot.text, mouseDown: down, mouseUp: location,
-                                              selectionBounds: snapshot.bounds, screen: screen))
+                                              selectionBounds: snapshot.bounds, lineBounds: snapshot.lineBounds,
+                                              screen: screen))
         }
     }
 
@@ -532,7 +832,11 @@ final class SelectionTranslateController {
         let inset = SelectionPopupLayout.iconCanvasInset
         let iconRect = SelectionPopupLayout.iconFrame(mouseDown: context.mouseDown, mouseUp: context.mouseUp,
                                                       selectionBounds: context.selectionBounds,
+                                                      lineBounds: context.lineBounds,
                                                       in: context.screen.visibleFrame)
+        let dir = SelectionPopupLayout.isAnchoredAtStart(mouseDown: context.mouseDown, mouseUp: context.mouseUp,
+                                                         selectionBounds: context.selectionBounds) ? "rl" : "lr"
+        AXSelectionReader.log.notice("selection.icon dir=\(dir, privacy: .public) icon=\(NSStringFromRect(iconRect), privacy: .public) line=\(context.lineBounds.map(NSStringFromRect) ?? "nil", privacy: .public) sel=\(context.selectionBounds.map(NSStringFromRect) ?? "nil", privacy: .public)")
         let panelFrame = iconRect.insetBy(dx: -inset, dy: -inset)
 
         let host = NSHostingView(rootView: SelectionTriggerView(
@@ -586,6 +890,7 @@ final class SelectionTranslateController {
         let initialSize = CGSize(width: SelectionPopupLayout.popoverWidth, height: 84)
         let frame = SelectionPopupLayout.popoverFrame(mouseDown: context.mouseDown, mouseUp: context.mouseUp,
                                                       selectionBounds: context.selectionBounds,
+                                                      lineBounds: context.lineBounds,
                                                       size: initialSize, in: context.screen.visibleFrame)
         let panel = NonActivatingPanel(contentRect: frame)
         panel.hasShadow = true
@@ -606,6 +911,7 @@ final class SelectionTranslateController {
         let clampedHeight = min(height, WindowPlacement.maxHeight(in: context.screen.visibleFrame))
         let target = SelectionPopupLayout.popoverFrame(mouseDown: context.mouseDown, mouseUp: context.mouseUp,
                                                        selectionBounds: context.selectionBounds,
+                                                       lineBounds: context.lineBounds,
                                                        size: CGSize(width: SelectionPopupLayout.popoverWidth, height: clampedHeight),
                                                        in: context.screen.visibleFrame)
         guard abs(panel.frame.height - target.height) > 1 || abs(panel.frame.minY - target.minY) > 1 else { return }

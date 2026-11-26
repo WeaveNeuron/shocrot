@@ -68,41 +68,122 @@ struct SelectionPopupLayoutTests {
         #expect(L.cleanedSelection("  你好世界\n") == "你好世界")
     }
 
-    /// Left-to-right drag: mouse releases at the end -> icon appears near the end (right).
-    /// Right-to-left drag: mouse releases at the start -> icon appears near the start (left).
-    @Test func iconFollowsMouseUpDirection() {
-        let lineBounds = CGRect(x: 450, y: 700, width: 260, height: 20)
+    @Test func trimmedLineRangeStripsNewlinesAndOuterWhitespace() {
+        let line = L.trimmedLineRange(CFRange(location: 40, length: 16), text: "  Hello world \n")
+        #expect(line?.location == 42)
+        #expect(line?.length == 11)
 
-        let lrIcon = L.iconFrame(mouseDown: CGPoint(x: 450, y: 710),
-                                 mouseUp: CGPoint(x: 710, y: 710),
-                                 selectionBounds: lineBounds,
-                                 in: visible)
-        #expect(lrIcon.minX >= 710) // at the end
-        #expect(lrIcon.maxY == lineBounds.minY - L.iconGap)
+        // Blank / newline-only lines return nil so they don't distort adjacent clearance.
+        #expect(L.trimmedLineRange(CFRange(location: 10, length: 3), text: " \t\n") == nil)
 
-        let rlIcon = L.iconFrame(mouseDown: CGPoint(x: 710, y: 710),
-                                 mouseUp: CGPoint(x: 450, y: 710),
-                                 selectionBounds: lineBounds,
+        // CJK characters keep exact UTF-16 range alignment.
+        let zh = L.trimmedLineRange(CFRange(location: 100, length: 5), text: "简体中文\n")
+        #expect(zh?.location == 100 && zh?.length == 4)
+    }
+
+    @Test func clearedLineBoundsClearsOverhangingAdjacentLinesAndRespectsContainer() {
+        let line = CGRect(x: 490, y: 700, width: 774, height: 16) // maxX = 1264
+        let nextLine = CGRect(x: 490, y: 684, width: 790, height: 16) // maxX = 1280, overlaps centered 28pt icon vertically
+        let farBelow = CGRect(x: 490, y: 620, width: 900, height: 16) // too far vertically to overlap
+        let cleared = L.clearedLineBounds(line, adjacentLines: [nextLine, farBelow])
+        #expect(cleared.minX == 490)
+        #expect(cleared.maxX == 1280)
+        #expect(cleared.minY == 700 && cleared.height == 16)
+
+        // Horizontally scrolled container clips the reported line edge to the visible viewport.
+        let viewport = CGRect(x: 480, y: 500, width: 600, height: 400) // maxX = 1080
+        let clipped = L.clearedLineBounds(line, adjacentLines: [nextLine], container: viewport)
+        #expect(clipped.maxX == 1080)
+    }
+
+    /// Left-to-right drag: places icon to the right of the selection's line, vertically centered on that line.
+    /// Right-to-left drag: places icon to the left of the selection's line, vertically centered on that line.
+    /// Neither overlaps the selected text or the next line underneath.
+    @Test func iconSitsBesideLineVerticallyCenteredWithoutCoveringText() {
+        let fullLine = CGRect(x: 490, y: 700, width: 770, height: 18) // x 490...1260
+        let midSelection = CGRect(x: 660, y: 700, width: 250, height: 18) // mid-line selection
+        let nextLine = CGRect(x: 490, y: 680, width: 770, height: 18) // directly below
+
+        let lrIcon = L.iconFrame(mouseDown: CGPoint(x: 660, y: 709),
+                                 mouseUp: CGPoint(x: 910, y: 709),
+                                 selectionBounds: midSelection,
+                                 lineBounds: fullLine,
                                  in: visible)
-        #expect(rlIcon.maxX <= 450) // at the start
-        #expect(rlIcon.maxY == lineBounds.minY - L.iconGap)
+        #expect(lrIcon.minX == fullLine.maxX + L.iconGap)
+        #expect(abs(lrIcon.midY - fullLine.midY) <= 1)
+        #expect(!lrIcon.intersects(fullLine))
+        #expect(!lrIcon.intersects(nextLine))
+
+        let rlIcon = L.iconFrame(mouseDown: CGPoint(x: 910, y: 709),
+                                 mouseUp: CGPoint(x: 660, y: 709),
+                                 selectionBounds: midSelection,
+                                 lineBounds: fullLine,
+                                 in: visible)
+        #expect(rlIcon.maxX == fullLine.minX - L.iconGap)
+        #expect(abs(rlIcon.midY - fullLine.midY) <= 1)
+        #expect(!rlIcon.intersects(fullLine))
+        #expect(!rlIcon.intersects(nextLine))
         #expect(rlIcon.minX < lrIcon.minX)
     }
 
-    @Test func multiLineSelectionFollowsMouseUpLineRatherThanJumpingToTop() {
-        let tallBounds = CGRect(x: 450, y: 600, width: 400, height: 120) // spans y 600...720
-        // Dragged downward to bottom line (y = 610)
-        let bottomIcon = L.iconFrame(mouseDown: CGPoint(x: 450, y: 710),
-                                     mouseUp: CGPoint(x: 720, y: 610),
-                                     selectionBounds: tallBounds,
-                                     in: visible)
-        #expect(abs(bottomIcon.maxY - (610 - 11 - L.iconGap)) <= 1)
+    @Test func iconFallsBackAboveLineWhenHorizontalRoomIsInsufficient() {
+        let inset = visible.insetBy(dx: L.margin, dy: L.margin)
 
-        // Dragged upward to top line (y = 710)
-        let topIcon = L.iconFrame(mouseDown: CGPoint(x: 720, y: 610),
-                                  mouseUp: CGPoint(x: 450, y: 710),
+        // Full-width line flush with right edge: L→R has no room to the right -> falls back above the line.
+        let rightEdgeLine = CGRect(x: 400, y: 700, width: inset.maxX - 400 - 4, height: 18)
+        let rightSel = CGRect(x: 1500, y: 700, width: 200, height: 18)
+        let lrFallback = L.iconFrame(mouseDown: CGPoint(x: 1500, y: 709),
+                                     mouseUp: CGPoint(x: 1700, y: 709),
+                                     selectionBounds: rightSel,
+                                     lineBounds: rightEdgeLine,
+                                     in: visible)
+        #expect(inset.contains(lrFallback))
+        #expect(lrFallback.minY == rightEdgeLine.maxY + L.iconVerticalGap)
+
+        // Full-width line flush with left edge: R→L has no room to the left -> falls back above the line.
+        let leftEdgeLine = CGRect(x: inset.minX + 4, y: 700, width: 900, height: 18)
+        let leftSel = CGRect(x: 100, y: 700, width: 200, height: 18)
+        let rlFallback = L.iconFrame(mouseDown: CGPoint(x: 300, y: 709),
+                                     mouseUp: CGPoint(x: 100, y: 709),
+                                     selectionBounds: leftEdgeLine.intersection(leftSel),
+                                     lineBounds: leftEdgeLine,
+                                     in: visible)
+        #expect(inset.contains(rlFallback))
+        #expect(rlFallback.minY == leftEdgeLine.maxY + L.iconVerticalGap)
+
+        // Also flush with top edge: flips below as last resort while staying inside visible bounds.
+        let topRightLine = CGRect(x: 400, y: inset.maxY - 20, width: inset.maxX - 400 - 4, height: 18)
+        let topFallback = L.iconFrame(mouseDown: CGPoint(x: 1500, y: topRightLine.midY),
+                                      mouseUp: CGPoint(x: 1700, y: topRightLine.midY),
+                                      selectionBounds: CGRect(x: 1500, y: topRightLine.minY, width: 200, height: 18),
+                                      lineBounds: topRightLine,
+                                      in: visible)
+        #expect(inset.contains(topFallback))
+        #expect(topFallback.maxY == topRightLine.minY - L.iconVerticalGap)
+    }
+
+    @Test func multiLineSelectionFollowsMouseUpLineAndDirection() {
+        let tallBounds = CGRect(x: 450, y: 600, width: 400, height: 120) // spans y 600...720
+        let bottomLine = CGRect(x: 450, y: 600, width: 400, height: 18)
+        let topLine = CGRect(x: 450, y: 702, width: 400, height: 18)
+
+        // Dragged downward to bottom line -> sits right of bottom line, centered on bottom line.
+        let bottomIcon = L.iconFrame(mouseDown: CGPoint(x: 450, y: 710),
+                                     mouseUp: CGPoint(x: 720, y: 609),
+                                     selectionBounds: tallBounds,
+                                     lineBounds: bottomLine,
+                                     in: visible)
+        #expect(bottomIcon.minX == bottomLine.maxX + L.iconGap)
+        #expect(abs(bottomIcon.midY - bottomLine.midY) <= 1)
+
+        // Dragged upward to top line -> sits left of top line, centered on top line.
+        let topIcon = L.iconFrame(mouseDown: CGPoint(x: 720, y: 609),
+                                  mouseUp: CGPoint(x: 500, y: 711),
                                   selectionBounds: tallBounds,
+                                  lineBounds: topLine,
                                   in: visible)
+        #expect(topIcon.maxX == topLine.minX - L.iconGap)
+        #expect(abs(topIcon.midY - topLine.midY) <= 1)
         #expect(topIcon.minY > bottomIcon.minY + 80)
     }
 
@@ -110,17 +191,21 @@ struct SelectionPopupLayoutTests {
         let secondary = CGRect(x: 1920, y: 0, width: 1512, height: 944)
         let inset = secondary.insetBy(dx: L.margin, dy: L.margin)
 
-        // Near bottom-right corner: icon and popover must flip above and stay inside secondary display.
+        // Near bottom-right corner: icon falls back above and stays inside secondary display; popover flips above.
         let nearBottomRight = CGPoint(x: secondary.maxX - 10, y: secondary.minY + 14)
+        let cornerLine = CGRect(x: nearBottomRight.x - 100, y: secondary.minY + 6, width: 100, height: 18)
         let icon = L.iconFrame(mouseDown: CGPoint(x: nearBottomRight.x - 100, y: nearBottomRight.y),
                                mouseUp: nearBottomRight,
-                               selectionBounds: CGRect(x: nearBottomRight.x - 100, y: secondary.minY + 6, width: 100, height: 18),
+                               selectionBounds: cornerLine,
+                               lineBounds: cornerLine,
                                in: secondary)
         #expect(inset.contains(icon))
+        #expect(icon.minY >= cornerLine.maxY)
 
         let popover = L.popoverFrame(mouseDown: CGPoint(x: nearBottomRight.x - 100, y: nearBottomRight.y),
                                      mouseUp: nearBottomRight,
-                                     selectionBounds: CGRect(x: nearBottomRight.x - 100, y: secondary.minY + 6, width: 100, height: 18),
+                                     selectionBounds: cornerLine,
+                                     lineBounds: cornerLine,
                                      size: CGSize(width: L.popoverWidth, height: 110),
                                      in: secondary)
         #expect(inset.contains(popover))
@@ -131,6 +216,7 @@ struct SelectionPopupLayoutTests {
         let below = L.popoverFrame(mouseDown: CGPoint(x: 2200, y: 510),
                                    mouseUp: CGPoint(x: 2380, y: 510),
                                    selectionBounds: midLine,
+                                   lineBounds: midLine,
                                    size: CGSize(width: L.popoverWidth, height: 100),
                                    in: secondary)
         #expect(inset.contains(below))
