@@ -4,15 +4,24 @@ import NaturalLanguage
 struct Language: Hashable, Identifiable {
     let code: String // BCP-47, e.g. "zh-Hans"
     /// In the UI language; a code we have no name for shows as itself.
-    var name: String {
-        let key = "language.\(code)"
-        let name = L(key)
-        return name == key ? code : name
-    }
+    var name: String { localizedName(in: L10n.language) }
     var id: String { code }
     var locale: Locale.Language { Locale.Language(identifier: code) }
     var englishName: String { Locale(identifier: "en").localizedString(forIdentifier: code) ?? code }
     var isChinese: Bool { code.hasPrefix("zh") }
+
+    /// Display name localized to `language` (defaults to the current UI language).
+    /// Prefers the app's curated string table for `language`, then falls back to Foundation's `Locale`
+    /// for uncataloged or regional BCP-47 codes so non-English UIs never leak English names, then raw `code`.
+    func localizedName(in language: String = L10n.language) -> String {
+        let key = "language.\(code)"
+        if let entry = L10n.table(language)[key] { return entry }
+        if let localized = Locale(identifier: language).localizedString(forIdentifier: code), !localized.isEmpty {
+            return localized
+        }
+        if let fallback = L10n.table(L10n.fallback)[key] { return fallback }
+        return code
+    }
 
     /// Names live in Localizable.strings as `language.<code>`.
     static let all: [Language] = [
