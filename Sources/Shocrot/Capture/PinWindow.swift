@@ -121,6 +121,7 @@ final class PinWindow: NSPanel {
             case "-": setZoom(zoom / 1.1, anchor: nil)
             case "0": setZoom(1, anchor: nil)
             case "r": apply(.rotateRight)
+            case ",": SettingsWindow.show()
             default: super.keyDown(with: event)
             }
             return
@@ -286,5 +287,6 @@ struct PinActionBar: View {
         }
         .buttonStyle(.plain)
         .help(help)
+        .accessibilityLabel(help.components(separatedBy: " (").first ?? help)
     }
 }

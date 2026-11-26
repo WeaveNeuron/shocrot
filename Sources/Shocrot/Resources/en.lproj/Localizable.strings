@@ -34,6 +34,7 @@
 "menu.grantScreenRecording.subtitle" = "Needed for screenshots, text recognition and translation";
 "menu.delayedCapture" = "Capture Area in 3 Seconds";
 "menu.needsAccessibility" = "Requires Accessibility permission";
+"menu.shortcutConflict" = "Shortcut conflict — change in Settings";
 "menu.recognizeClipboard" = "Recognize Text in Clipboard Image";
 "menu.recognizeFile" = "Recognize Text in Image File…";
 "menu.history" = "History…";
@@ -310,6 +311,7 @@
 "ocr.codes" = "QR Codes / Barcodes";
 "ocr.search" = "Search";
 "ocr.recognizing" = "Recognizing…";
+"ocr.warmingUp" = "Preparing text engine…";
 "ocr.lines.one" = "1 line";
 "ocr.lines.other" = "%ld lines";
 "ocr.characters.one" = "1 character";
@@ -340,6 +342,8 @@
 "translate.collapse" = "Collapse";
 "translate.expand" = "Expand";
 "translate.openInDictionary" = "Open in Dictionary";
+"selection.iconHelp" = "Translate Selection";
+"selection.expand" = "Open in Translation Panel";
 
 /* MARK: Translation services */
 "service.apple" = "Apple Translate";

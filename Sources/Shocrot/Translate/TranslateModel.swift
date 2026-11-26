@@ -18,6 +18,10 @@ final class TranslateModel: ObservableObject {
     @Published var pinned = false
     /// Screenshot translation shows the panel right away while OCR is still running.
     @Published var isRecognizing = false
+    /// Set when OCR takes noticeably longer than usual (e.g. first-ever model compilation).
+    @Published var isSlowRecognizing = false
+    /// The captured selection size (in points) driving stable placeholder sizing while OCR runs.
+    @Published var recognizingSelectionSize: CGSize?
     /// The tallest the panel may get: its display's visible height less margins. Set by `TranslatePanel`.
     @Published var maxPanelHeight: CGFloat = .greatestFiniteMagnitude
     /// The language the input looks like (nil when unsure), whatever source is chosen.
@@ -30,27 +34,65 @@ final class TranslateModel: ObservableObject {
     @Published private(set) var hasServices = true
 
     private var tasks: [Task<Void, Never>] = []
+    private var slowHintTask: Task<Void, Never>?
     private let services: () -> [TranslationService]
 
     init(services: @escaping () -> [TranslationService] = { TranslationServices.enabled }) {
         self.services = services
     }
 
+    /// Prepares the panel for an incoming screenshot OCR with stable placeholder result cards right away.
+    func beginRecognizing(selectionSize: CGSize?) {
+        tasks.forEach { $0.cancel() }
+        tasks = []
+        slowHintTask?.cancel()
+        input = ""
+        definition = nil
+        detected = nil
+        resolvedSource = nil
+        resolvedTarget = nil
+        isRecognizing = true
+        isSlowRecognizing = false
+        recognizingSelectionSize = selectionSize
+        let enabled = services()
+        hasServices = !enabled.isEmpty
+        results = enabled.enumerated().map { ServiceResult(id: $0, name: $1.name, symbol: $1.symbol) }
+        slowHintTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(1200))
+            guard !Task.isCancelled, let self, self.isRecognizing else { return }
+            self.isSlowRecognizing = true
+        }
+    }
+
+    func endRecognizing() {
+        slowHintTask?.cancel()
+        slowHintTask = nil
+        isRecognizing = false
+        isSlowRecognizing = false
+        recognizingSelectionSize = nil
+    }
+
     func translate() {
         tasks.forEach { $0.cancel() }
+        endRecognizing()
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         let services = services()
         hasServices = !services.isEmpty
         guard !text.isEmpty else {
-            results = []; definition = nil; detected = nil; resolvedSource = nil
+            results = []; definition = nil; detected = nil; resolvedSource = nil; resolvedTarget = nil
             return
         }
+        let tDetect = PerfLog.now()
         detected = Language.detect(text)
+        let detectMs = PerfLog.elapsedMs(since: tDetect)
         let from = source ?? detected ?? Language.named("en")
         let to = target ?? Language.target(for: from)
         resolvedSource = from
         resolvedTarget = to
+        let tDict = PerfLog.now()
         definition = SystemDictionary.define(text)
+        let dictMs = PerfLog.elapsedMs(since: tDict)
+        PerfLog.logger.notice("translate.prepare detect_ms=\(detectMs, format: .fixed(precision: 1), privacy: .public) dict_ms=\(dictMs, format: .fixed(precision: 1), privacy: .public) chars=\(text.count, privacy: .public)")
         results = services.enumerated().map { ServiceResult(id: $0, name: $1.name, symbol: $1.symbol) }
         tasks = services.enumerated().map { index, service in
             Task { [weak self] in
@@ -71,7 +113,7 @@ final class TranslateModel: ObservableObject {
     }
 
     func query(_ text: String) {
-        isRecognizing = false
+        endRecognizing()
         input = text
         translate()
     }
@@ -117,11 +159,14 @@ final class TranslateModel: ObservableObject {
 
     func clear() {
         tasks.forEach { $0.cancel() }
+        tasks = []
+        endRecognizing()
         input = ""
         results = []
         definition = nil
         detected = nil
         resolvedSource = nil
+        resolvedTarget = nil
     }
 
     private func update(_ index: Int, _ change: (inout ServiceResult) -> Void) {

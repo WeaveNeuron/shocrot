@@ -75,6 +75,8 @@ struct CaptureToolbar: View {
                                     .overlay(Circle().strokeBorder(Color.accentColor, lineWidth: state.color == color ? 2 : 0))
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel(color.hexString)
+                            .accessibilityAddTraits(state.color == color ? .isSelected : [])
                         }
                         Divider().frame(height: 18)
                     }
@@ -90,6 +92,8 @@ struct CaptureToolbar: View {
                         }
                         .buttonStyle(.plain)
                         .help([L("toolbar.width.thin"), L("toolbar.width.medium"), L("toolbar.width.thick")][i])
+                        .accessibilityLabel([L("toolbar.width.thin"), L("toolbar.width.medium"), L("toolbar.width.thick")][i])
+                        .accessibilityAddTraits(state.widthIndex == i ? .isSelected : [])
                     }
                 }
                 .padding(.horizontal, 10)

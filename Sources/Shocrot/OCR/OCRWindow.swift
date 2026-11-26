@@ -21,29 +21,42 @@ final class OCRModel: ObservableObject {
         self.historyID = historyID
     }
 
+    @Published var isSlowFirstRun = false
+
     var isLoading: Bool { result == nil && error == nil }
 
     @MainActor
     func run() async {
+        let slowHint = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(1200))
+            guard !Task.isCancelled, let self, self.isLoading else { return }
+            self.isSlowFirstRun = true
+        }
+        defer { slowHint.cancel() }
         do {
             let r = try await OCRService.recognize(image, languages: Settings.shared.ocrLanguages)
             result = r
+            isSlowFirstRun = false
             text = r.text(keepLineBreaks: keepLineBreaks)
             if let historyID, !text.isEmpty { HistoryStore.shared.setText(text, for: historyID) }
             if Settings.shared.ocrAutoCopy, !text.isEmpty { ImageOutput.copyText(text) }
         } catch {
+            isSlowFirstRun = false
             self.error = error.localizedDescription
         }
     }
 }
 
+@MainActor
 enum OCRWindow {
     private static var windows: [NSWindow] = []
     /// One per open window: pulls it back inside its display after a drag or resize past an edge.
     private static var keepers: [ObjectIdentifier: OnScreenKeeper] = [:]
+    private static var closeObservers: [ObjectIdentifier: NSObjectProtocol] = [:]
     private static let preferredMinSize = CGSize(width: 620, height: 380)
 
     static func show(model: OCRModel) {
+        let t0 = PerfLog.now()
         let host = NSHostingController(rootView: OCRView(model: model))
         let window = NSWindow(contentViewController: host)
         window.title = L("common.recognizeText")
@@ -59,20 +72,23 @@ enum OCRWindow {
         window.setFrame(frame, display: false)
         windows.append(window)
         let id = ObjectIdentifier(window)
-        keepers[id] = MainActor.assumeIsolated { OnScreenKeeper(window: window, canShrink: true) }
+        keepers[id] = OnScreenKeeper(window: window, canShrink: true)
         // The observer goes with the window: left registered, its block would keep the window, the model
         // and the whole capture alive after closing.
-        var observer: NSObjectProtocol?
-        observer = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window,
-                                                          queue: .main) { [weak window] _ in
-            if let observer { NotificationCenter.default.removeObserver(observer) }
-            observer = nil
-            windows.removeAll { $0 === window }
-            keepers[id] = nil
-            FocusReturn.windowDidGoAway()
+        closeObservers[id] = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window,
+                                                                    queue: .main) { [weak window] _ in
+            MainActor.assumeIsolated {
+                if let observer = closeObservers.removeValue(forKey: id) {
+                    NotificationCenter.default.removeObserver(observer)
+                }
+                windows.removeAll { $0 === window }
+                keepers[id] = nil
+                FocusReturn.windowDidGoAway()
+            }
         }
-        NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
+        window.collectionBehavior.insert(.moveToActiveSpace)
+        WindowPresentation.present(window)
+        PerfLog.logger.notice("ocr.window_show ms=\(PerfLog.elapsedMs(since: t0), format: .fixed(precision: 1), privacy: .public) since_launch_ms=\(PerfLog.msSinceLaunch, format: .fixed(precision: 1), privacy: .public)")
     }
 
     /// Centred on the display under the pointer (where the capture or the History window is), not wherever
@@ -119,9 +135,9 @@ struct OCRView: View {
         ZStack {
             Rectangle().fill(.background.secondary)
             GeometryReader { geo in
-                let imgSize = CGSize(width: CGFloat(model.image.width) / model.scale,
-                                     height: CGFloat(model.image.height) / model.scale)
-                let avail = CGSize(width: geo.size.width - 48, height: geo.size.height - 72)
+                let imgSize = CGSize(width: max(1, CGFloat(model.image.width) / max(model.scale, 1)),
+                                     height: max(1, CGFloat(model.image.height) / max(model.scale, 1)))
+                let avail = CGSize(width: max(1, geo.size.width - 48), height: max(1, geo.size.height - 72))
                 let fit = min(1, avail.width / imgSize.width, avail.height / imgSize.height)
                 let size = CGSize(width: imgSize.width * fit, height: imgSize.height * fit)
                 ZStack(alignment: .topLeading) {
@@ -255,7 +271,10 @@ struct OCRView: View {
     }
 
     private var stats: String {
-        guard let r = model.result else { return model.isLoading ? L("ocr.recognizing") : "" }
+        guard let r = model.result else {
+            if !model.isLoading { return "" }
+            return model.isSlowFirstRun ? L("ocr.warmingUp") : L("ocr.recognizing")
+        }
         let chars = model.text.filter { !$0.isWhitespace }.count
         return L10n.plural("ocr.lines", r.lines.count) + " · " + L10n.plural("ocr.characters", chars)
     }

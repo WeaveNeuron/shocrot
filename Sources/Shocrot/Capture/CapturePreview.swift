@@ -28,7 +28,9 @@ enum CapturePreview {
             if !hovering { scheduleDismiss(after: 3) }
         })
         let size = host.fittingSize
-        let screen = screen ?? NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main ?? NSScreen.screens[0]
+        guard let screen = screen ?? NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main ?? NSScreen.screens.first else {
+            return
+        }
         let vf = screen.visibleFrame
         let frame = CGRect(x: vf.minX + 12, y: vf.minY + 12, width: size.width, height: size.height)
 
@@ -237,6 +239,8 @@ private struct PreviewCard: View {
                 .buttonStyle(.plain)
                 .padding(6)
                 .opacity(hovering ? 1 : 0)
+                .help(L("common.close"))
+                .accessibilityLabel(L("common.close"))
             }
 
             Divider().opacity(0.5)

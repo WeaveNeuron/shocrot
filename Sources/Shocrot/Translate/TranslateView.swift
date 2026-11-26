@@ -15,6 +15,18 @@ struct TranslateView: View {
     @State private var inputScroll: TextScrollState?
     @State private var downloadRequest: TranslationSession.Configuration?
 
+    private var effectiveInputHeight: CGFloat {
+        if model.isRecognizing {
+            return TranslatePanelLayout.estimatedInputHeight(forSelection: model.recognizingSelectionSize)
+        }
+        return TranslatePanelLayout.inputHeight(natural: inputTextHeight)
+    }
+
+    private var placeholderResultHeight: CGFloat {
+        TranslatePanelLayout.estimatedResultTextHeight(forInputHeight: effectiveInputHeight,
+                                                       serviceCount: model.results.count)
+    }
+
     var body: some View {
         VStack(spacing: TranslatePanelLayout.spacing) {
             VStack(spacing: TranslatePanelLayout.spacing) {
@@ -28,7 +40,11 @@ struct TranslateView: View {
                     VStack(spacing: 8) {
                         if !model.hasServices { noServiceCard }
                         if let definition = model.definition { DefinitionCard(word: model.input, text: definition) }
-                        ForEach(model.results) { ResultCard(result: $0, language: model.resolvedTarget, onDownload: requestDownload) }
+                        ForEach(model.results) {
+                            ResultCard(result: $0, language: model.resolvedTarget,
+                                       placeholderHeight: placeholderResultHeight,
+                                       onDownload: requestDownload, onOpenSettings: openSettings)
+                        }
                     }
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { resultsHeight = $0 }
                 }
@@ -47,8 +63,11 @@ struct TranslateView: View {
         // Lets Apple's own sheet download missing offline languages, then retries.
         .translationTask(downloadRequest) { session in
             try? await session.prepareTranslation()
+            AppleTranslationService.invalidateCache()
             model.translate()
         }
+        .animation(.smooth(duration: 0.2), value: effectiveInputHeight)
+        .animation(.smooth(duration: 0.2), value: resultsHeight)
         .animation(.easeOut(duration: 0.18), value: model.results.count)
         .background {
             // ⇧⌘C copies the first finished translation, like the OCR window's copy shortcut.
@@ -72,17 +91,19 @@ struct TranslateView: View {
             Spacer()
             IconButton(symbol: model.pinned ? "pin.fill" : "pin", help: model.pinned ? L("translate.unpin") : L("translate.pin"),
                        active: model.pinned) { model.pinned.toggle() }
-            IconButton(symbol: "gearshape", help: L("translate.settings")) {
-                // The floating panel would cover Settings; a pinned one stays where the user wants it.
-                if !model.pinned { onClose() }
-                SettingsWindow.show(tab: .translate)
-            }
+            IconButton(symbol: "gearshape", help: L("translate.settings"), action: openSettings)
             IconButton(symbol: "xmark", help: L("common.closeEsc"), action: onClose)
         }
         .frame(height: 22)
         // The header is the panel's title bar: drag it to move the borderless panel. The buttons keep their clicks.
         // Not `WindowDragGesture`: dropped in the menu bar, a system drag tiles the panel to the screen centre.
         .background { HeaderDragHandle() }
+    }
+
+    private func openSettings() {
+        // The floating panel would cover Settings; a pinned one stays where the user wants it.
+        if !model.pinned { onClose() }
+        SettingsWindow.show(tab: .translate)
     }
 
     private func copyFirstResult() {
@@ -107,11 +128,14 @@ struct TranslateView: View {
         VStack(alignment: .leading, spacing: 4) {
             ZStack(alignment: .topLeading) {
                 if model.isRecognizing {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small)
-                        Text(L("translate.recognizing"))
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text(model.isSlowRecognizing ? L("ocr.warmingUp") : L("translate.recognizing"))
+                        }
+                        .foregroundStyle(.secondary)
+                        SkeletonLines(height: max(0, effectiveInputHeight - 30))
                     }
-                    .foregroundStyle(.secondary)
                     .padding(.leading, 5)
                     .padding(.top, 1)
                 } else if model.input.isEmpty {
@@ -151,7 +175,7 @@ struct TranslateView: View {
             // The editor's own ideal height is its whole text (a full-screen OCR made the panel 1800 pt tall), so
             // it gets a fixed height instead: a hidden copy of the text measures it, capped; longer text scrolls.
             .frame(maxWidth: .infinity, alignment: .topLeading)
-            .frame(height: TranslatePanelLayout.inputHeight(natural: inputTextHeight))
+            .frame(height: effectiveInputHeight)
             .background(alignment: .topLeading) {
                 Text(model.input + " ")
                     .font(.system(size: 14))
@@ -209,7 +233,7 @@ struct TranslateView: View {
         HStack {
             Text(L("translate.noServices")).foregroundStyle(.secondary)
             Spacer()
-            Button(L("translate.openSettings")) { SettingsWindow.show(tab: .translate) }
+            Button(L("translate.openSettings"), action: openSettings)
         }
         .font(.callout)
         .padding(12)
@@ -291,7 +315,9 @@ struct LanguageMenuTitle: Equatable {
 private struct ResultCard: View {
     let result: TranslateModel.ServiceResult
     let language: Language?
+    let placeholderHeight: CGFloat
     let onDownload: () -> Void
+    let onOpenSettings: () -> Void
     @ObservedObject private var speaker = Speaker.shared
     @State private var copied = false
 
@@ -318,16 +344,15 @@ private struct ResultCard: View {
             .frame(height: 18)
 
             if let error = result.error {
-                ErrorRow(error: error, onDownload: onDownload)
+                ErrorRow(error: error, onDownload: onDownload, onOpenSettings: onOpenSettings)
             } else if !result.text.isEmpty {
                 Text(result.text)
                     .font(.system(size: 14))
                     .lineSpacing(3)
                     .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: result.isLoading ? placeholderHeight : nil, alignment: .topLeading)
             } else {
-                RoundedRectangle(cornerRadius: 3).fill(.primary.opacity(0.06)).frame(height: 12)
-                    .frame(maxWidth: 220, alignment: .leading)
+                SkeletonLines(height: placeholderHeight)
             }
         }
         .padding(10)
@@ -335,9 +360,33 @@ private struct ResultCard: View {
     }
 }
 
+/// Soft placeholder bars that reserve the expected text height while OCR or translation is loading.
+private struct SkeletonLines: View {
+    let height: CGFloat
+
+    private static let widths: [CGFloat] = [0.94, 0.86, 0.72, 0.90, 0.62, 0.82]
+
+    var body: some View {
+        let count = max(1, min(Self.widths.count, Int((height / 21).rounded(.down))))
+        GeometryReader { geo in
+            VStack(alignment: .leading, spacing: 9) {
+                ForEach(0..<count, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(.primary.opacity(0.07))
+                        .frame(width: max(40, geo.size.width * Self.widths[i]), height: 12)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(height: height)
+        .accessibilityHidden(true)
+    }
+}
+
 private struct ErrorRow: View {
     let error: Error
     let onDownload: () -> Void
+    let onOpenSettings: () -> Void
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
@@ -348,7 +397,7 @@ private struct ErrorRow: View {
             case .downloadLanguages:
                 Button(L("translate.download"), action: onDownload)
             case .openSettings:
-                Button(L("translate.settingsButton")) { SettingsWindow.show(tab: .translate) }
+                Button(L("translate.settingsButton"), action: onOpenSettings)
             case nil:
                 EmptyView()
             }
@@ -411,6 +460,8 @@ struct IconButton: View {
         .buttonStyle(.plain)
         .opacity(isEnabled ? 1 : 0.4)
         .onHover { hovering = $0 }
+        .onDisappear { hovering = false }
+        .onReceive(NotificationCenter.default.publisher(for: .translatePanelWillClose)) { _ in hovering = false }
         .help(help)
         .accessibilityLabel(help)
     }

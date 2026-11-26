@@ -168,3 +168,48 @@ struct AppLanguageTests {
         #expect(AppLanguage.allCases.map(\.rawValue) == ["system", "en", "zh-Hans"])
     }
 }
+
+@Suite("Localized language names")
+struct LocalizedLanguageNameTests {
+    @Test func followsChineseInterfaceForAllSupportedLanguages() {
+        #expect(Language.named("zh-Hans").localizedName(in: "zh-Hans") == "简体中文")
+        #expect(Language.named("en").localizedName(in: "zh-Hans") == "英语")
+        #expect(Language.named("ja").localizedName(in: "zh-Hans") == "日语")
+        #expect(Language.named("fr").localizedName(in: "zh-Hans") == "法语")
+        for lang in Language.all {
+            let zh = lang.localizedName(in: "zh-Hans")
+            let en = lang.localizedName(in: "en")
+            #expect(!zh.isEmpty && zh != lang.code, "\(lang.code) missing zh-Hans localization")
+            #expect(zh != en, "\(lang.code) leaked English name '\(en)' into zh-Hans UI")
+        }
+    }
+
+    @Test func keepsEnglishNamesInEnglishInterfaceAndLLMPrompts() {
+        #expect(Language.named("zh-Hans").localizedName(in: "en") == "Chinese (Simplified)")
+        #expect(Language.named("zh-Hant").localizedName(in: "en") == "Chinese (Traditional)")
+        #expect(Language.named("en").localizedName(in: "en") == "English")
+        #expect(Language.named("ja").localizedName(in: "en") == "Japanese")
+        #expect(Language.named("zh-Hans").englishName.contains("Chinese"))
+        #expect(Language.named("en").englishName == "English")
+    }
+
+    @Test func uncatalogedAndRegionalCodesLocalizeIntoUILanguage() {
+        // Codes outside Localizable.strings fall back to Locale(identifier: uiLanguage), never leaking English to zh-Hans.
+        let svZh = Language.named("sv").localizedName(in: "zh-Hans")
+        let svEn = Language.named("sv").localizedName(in: "en")
+        #expect(svZh != "sv" && svZh != svEn)
+        #expect(svEn == "Swedish")
+
+        let regionalZh = Language.named("zh-Hans-CN").localizedName(in: "zh-Hans")
+        #expect(regionalZh.contains("中文"))
+        // Unknown invalid codes still fall back to the raw identifier.
+        #expect(Language.named("xx").localizedName(in: "zh-Hans") == "xx")
+        #expect(Language.named("xx").localizedName(in: "en") == "xx")
+    }
+
+    @Test func nameMatchesCurrentUILanguage() {
+        for lang in [Language.named("zh-Hans"), Language.named("en"), Language.named("ja")] {
+            #expect(lang.name == lang.localizedName(in: L10n.language))
+        }
+    }
+}

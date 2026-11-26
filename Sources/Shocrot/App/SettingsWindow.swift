@@ -1,24 +1,35 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 enum SettingsWindow {
+    static let defaultSize = CGSize(width: 740, height: 640)
     private static var window: NSWindow?
+    private static var keeper: OnScreenKeeper?
+
+    static var isOpen: Bool {
+        guard let window else { return false }
+        return window.isVisible || window.isMiniaturized
+    }
 
     static func show(tab: SettingsTab? = nil) {
         if let tab { SettingsRouter.shared.tab = tab }
         if window == nil {
-            let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
+            let host = NSHostingController(rootView: SettingsView())
+            let w = NSWindow(contentViewController: host)
             w.title = L("settings.windowTitle")
             w.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden
             w.toolbarStyle = .unified
             w.isReleasedWhenClosed = false
-            w.center()
+            w.collectionBehavior.insert(.moveToActiveSpace)
+            w.setContentSize(defaultSize)
+            keeper = OnScreenKeeper(window: w)
             window = w
         }
-        NSApp.activate()
-        window?.makeKeyAndOrderFront(nil)
+        guard let window else { return }
+        WindowPresentation.present(window, centerOnMouseScreenWhenHidden: true, preferredSize: window.frame.size)
     }
 }
 
@@ -80,21 +91,27 @@ final class SettingsRouter: ObservableObject {
 /// System Settings–style layout: a sidebar of colored icons, a header and a grouped form per page.
 struct SettingsView: View {
     @ObservedObject private var router = SettingsRouter.shared
+    private static let sidebarWidth: CGFloat = 212
 
     var body: some View {
-        NavigationSplitView {
+        HStack(spacing: 0) {
             List(SettingsTab.allCases, selection: Binding(get: { router.tab }, set: { if let t = $0 { router.tab = t } })) { tab in
                 Label {
                     Text(tab.title)
+                        .lineLimit(1)
                 } icon: {
                     SettingsIcon(tab: tab, size: 22)
                 }
                 .padding(.vertical, 2)
                 .tag(tab)
             }
-            .navigationSplitViewColumnWidth(190)
-            .toolbar(removing: .sidebarToggle)
-        } detail: {
+            .listStyle(.sidebar)
+            .safeAreaPadding(.top, 34)
+            .frame(width: Self.sidebarWidth)
+            .ignoresSafeArea(.container, edges: .top)
+
+            Divider()
+
             VStack(spacing: 0) {
                 if router.tab != .about {
                     HStack(spacing: 12) {
@@ -110,9 +127,9 @@ struct SettingsView: View {
                 }
                 page.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .toolbar(removing: .title)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 720, height: 640)
+        .frame(width: SettingsWindow.defaultSize.width, height: SettingsWindow.defaultSize.height)
     }
 
     @ViewBuilder private var page: some View {
@@ -478,6 +495,12 @@ private struct TranslateSettings: View {
         .formStyle(.grouped)
         .onChange(of: s.llm.baseURL) { _, url in apiKey = Keychain.llmAPIKey(for: url) ?? "" }
         .onChange(of: s.llm.enabled) { _, on in if on { adoptListedModel = true } }
+        .onChange(of: s.primaryLanguage) { old, new in
+            if new == s.secondaryLanguage { s.secondaryLanguage = old }
+        }
+        .onChange(of: s.secondaryLanguage) { old, new in
+            if new == s.primaryLanguage { s.primaryLanguage = old }
+        }
     }
 
     /// Lists the endpoint's models; a just-chosen preset's default model gives way to an installed one.

@@ -90,8 +90,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        // Launching the app again from Finder/Spotlight opens Settings.
-        if !flag { SettingsWindow.show() }
+        // Launching the app again from Finder/Spotlight opens or fronts Settings even when floating panels
+        // (pins, translate panel) are visible or Settings sits behind another app / on another Space.
+        let titledOnActiveSpace = sender.windows.first {
+            $0.isVisible && !$0.isMiniaturized && $0.isOnActiveSpace && $0.styleMask.contains(.titled)
+        }
+        switch WindowPresentation.reopenAction(settingsOpen: SettingsWindow.isOpen,
+                                               hasVisibleTitledOnActiveSpace: titledOnActiveSpace != nil) {
+        case .showSettings:
+            SettingsWindow.show()
+        case .frontExistingTitled:
+            if let titledOnActiveSpace { WindowPresentation.present(titledOnActiveSpace) }
+        }
         return true
     }
 }

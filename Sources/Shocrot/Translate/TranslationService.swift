@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Translation
 
 /// A translation backend. Results stream in as the cumulative translated text,
@@ -50,23 +51,60 @@ struct AppleTranslationService: TranslationService {
     var name: String { L("service.apple") }
     let symbol = "apple.logo"
 
+    private struct PairKey: Hashable {
+        let source: String
+        let target: String
+    }
+
+    /// Caches only `.installed` pairs so newly downloaded languages are discovered immediately.
+    private static let installedCache = OSAllocatedUnfairLock(initialState: [PairKey: (Locale.Language, Locale.Language)]())
+
+    static func invalidateCache() {
+        installedCache.withLock { $0.removeAll() }
+    }
+
+    /// Pre-checks availability for the user's primary/secondary language pair and warms `NLLanguageRecognizer`
+    /// after launch without prompting for downloads or creating a UI session.
+    static func warmUp(primary: String, secondary: String) {
+        let p = Language.named(primary), s = Language.named(secondary)
+        Task.detached(priority: .utility) {
+            let t0 = PerfLog.now()
+            _ = Language.detect("Hello world")
+            _ = try? await installedPair(p, s)
+            _ = try? await installedPair(s, p)
+            PerfLog.logger.notice("translate.warmup done_ms=\(PerfLog.elapsedMs(since: t0), format: .fixed(precision: 1), privacy: .public) since_launch_ms=\(PerfLog.msSinceLaunch, format: .fixed(precision: 1), privacy: .public)")
+        }
+    }
+
     func translate(_ text: String, from source: Language, to target: Language) -> AsyncThrowingStream<String, Error> {
         translationStream { continuation in
+            let t0 = PerfLog.now()
             let (from, to) = try await Self.installedPair(source, target)
+            let availMs = PerfLog.elapsedMs(since: t0)
+            let t1 = PerfLog.now()
             let session = TranslationSession(installedSource: from, target: to)
-            continuation.yield(try await session.translate(text).targetText)
+            let out = try await session.translate(text).targetText
+            let transMs = PerfLog.elapsedMs(since: t1)
+            PerfLog.logger.notice("translate.apple avail_ms=\(availMs, format: .fixed(precision: 1), privacy: .public) translate_ms=\(transMs, format: .fixed(precision: 1), privacy: .public) total_ms=\(PerfLog.elapsedMs(since: t0), format: .fixed(precision: 1), privacy: .public) chars=\(text.count, privacy: .public) since_launch_ms=\(PerfLog.msSinceLaunch, format: .fixed(precision: 1), privacy: .public)")
+            continuation.yield(out)
         }
     }
 
     /// Plain "en" resolves to en-US; if the user downloaded another variant (e.g. English UK), use that instead.
     private static func installedPair(_ source: Language, _ target: Language) async throws
         -> (Locale.Language, Locale.Language) {
+        let key = PairKey(source: source.code, target: target.code)
+        if let cached = installedCache.withLock({ $0[key] }) {
+            return cached
+        }
         let availability = LanguageAvailability()
         var supported = false
         for from in variants(source) {
             for to in variants(target) {
                 switch await availability.status(from: from, to: to) {
-                case .installed: return (from, to)
+                case .installed:
+                    installedCache.withLock { $0[key] = (from, to) }
+                    return (from, to)
                 case .supported: supported = true
                 default: break
                 }

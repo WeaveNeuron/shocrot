@@ -185,7 +185,12 @@ final class Settings: ObservableObject {
     @Published var ocrAutoCopy: Bool { didSet { d.set(ocrAutoCopy, forKey: "ocrAutoCopy") } }
     @Published var ocrShowWindow: Bool { didSet { d.set(ocrShowWindow, forKey: "ocrShowWindow") } }
     @Published var ocrKeepLineBreaks: Bool { didSet { d.set(ocrKeepLineBreaks, forKey: "ocrKeepLineBreaks") } }
-    @Published var ocrLanguages: [String] { didSet { d.set(ocrLanguages, forKey: "ocrLanguages") } }
+    @Published var ocrLanguages: [String] {
+        didSet {
+            d.set(ocrLanguages, forKey: "ocrLanguages")
+            if ocrLanguages != oldValue { VisionOCREngine.warmUp(languages: ocrLanguages, delay: 0.6) }
+        }
+    }
     @Published var keepHistory: Bool { didSet { d.set(keepHistory, forKey: "keepHistory") } }
     @Published var primaryLanguage: String { didSet { d.set(primaryLanguage, forKey: "primaryLanguage") } }
     @Published var secondaryLanguage: String { didSet { d.set(secondaryLanguage, forKey: "secondaryLanguage") } }
