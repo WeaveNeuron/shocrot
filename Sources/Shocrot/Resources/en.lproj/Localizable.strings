@@ -310,6 +310,7 @@
 "ocr.codes" = "QR Codes / Barcodes";
 "ocr.search" = "Search";
 "ocr.recognizing" = "Recognizing…";
+"ocr.warmingUp" = "Preparing text engine…";
 "ocr.lines.one" = "1 line";
 "ocr.lines.other" = "%ld lines";
 "ocr.characters.one" = "1 character";

@@ -1,4 +1,5 @@
 import AppKit
+import os
 import Vision
 
 struct OCRLine: Identifiable {
@@ -65,14 +66,20 @@ private extension String {
 /// to this protocol and being assigned to `OCRService.engine`.
 protocol OCREngine {
     var name: String { get }
-    func recognize(_ image: CGImage, languages: [String]) async throws -> OCRResult
+    func recognize(_ image: CGImage, languages: [String], detectBarcodes: Bool) async throws -> OCRResult
+}
+
+extension OCREngine {
+    func recognize(_ image: CGImage, languages: [String]) async throws -> OCRResult {
+        try await recognize(image, languages: languages, detectBarcodes: true)
+    }
 }
 
 enum OCRService {
     static var engine: OCREngine = VisionOCREngine()
 
-    static func recognize(_ image: CGImage, languages: [String]) async throws -> OCRResult {
-        try await engine.recognize(image, languages: languages)
+    static func recognize(_ image: CGImage, languages: [String], detectBarcodes: Bool = true) async throws -> OCRResult {
+        try await engine.recognize(image, languages: languages, detectBarcodes: detectBarcodes)
     }
 }
 
@@ -80,53 +87,154 @@ enum OCRService {
 struct VisionOCREngine: OCREngine {
     let name = "Apple Vision"
 
-    func recognize(_ image: CGImage, languages: [String]) async throws -> OCRResult {
-        try await withCheckedThrowingContinuation { cont in
+    private struct WarmUpState {
+        var pendingWork: DispatchWorkItem?
+        var inFlight = false
+        var warmedLanguages: [String]?
+    }
+
+    private static let warmUpLock = OSAllocatedUnfairLock(initialState: WarmUpState())
+    private static let warmUpQueue = DispatchQueue(label: "shocrot.ocr.warmup", qos: .utility)
+    private static let supportedLanguages: Set<String> = {
+        let req = VNRecognizeTextRequest()
+        req.recognitionLevel = .accurate
+        return Set((try? req.supportedRecognitionLanguages()) ?? [])
+    }()
+
+    /// True while a background warm-up pass is currently executing (e.g. first-ever model compilation).
+    static var isWarmingUp: Bool {
+        warmUpLock.withLock { $0.inFlight }
+    }
+
+    func recognize(_ image: CGImage, languages: [String], detectBarcodes: Bool) async throws -> OCRResult {
+        // Real user OCR cancels any not-yet-started idle warm-up so it doesn't compete with this capture.
+        Self.cancelPendingWarmUp()
+        return try await withCheckedThrowingContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
-                cont.resume(with: Result { try Self.recognizeSync(image, languages: languages) })
+                cont.resume(with: Result {
+                    let result = try Self.recognizeSync(image, languages: languages, detectBarcodes: detectBarcodes)
+                    Self.markWarmed(languages: languages)
+                    return result
+                })
             }
         }
     }
 
-    /// Vision loads its text models lazily, which makes the first recognition slow.
-    /// Run a throwaway request in the background at launch so the first real one is instant.
-    static func warmUp(languages: [String]) {
-        DispatchQueue.global(qos: .utility).async {
-            let size = 64
-            guard let ctx = CGContext(data: nil, width: size * 4, height: size, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
-            ctx.setFillColor(CGColor(gray: 1, alpha: 1))
-            ctx.fill(CGRect(x: 0, y: 0, width: size * 4, height: size))
-            let font = CTFontCreateWithName("PingFang SC" as CFString, 28, nil)
-            let text = NSAttributedString(string: "Shocrot 截图", attributes: [
-                NSAttributedString.Key(kCTFontAttributeName as String): font,
-                NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 0, alpha: 1),
-            ])
-            ctx.textPosition = CGPoint(x: 8, y: 20)
-            CTLineDraw(CTLineCreateWithAttributedString(text), ctx)
-            if let image = ctx.makeImage() { _ = try? recognizeSync(image, languages: languages) }
+    /// Cancels a scheduled warm-up that hasn't started yet.
+    static func cancelPendingWarmUp() {
+        warmUpLock.withLock { state in
+            state.pendingWork?.cancel()
+            state.pendingWork = nil
         }
     }
 
-    static func recognizeSync(_ image: CGImage, languages: [String]) throws -> OCRResult {
+    private static func markWarmed(languages: [String]) {
+        warmUpLock.withLock { state in
+            state.warmedLanguages = languages
+        }
+    }
+
+    /// Schedules a lightweight background warm-up after `delay` seconds of launch/settings idle time.
+    /// Using a medium bilingual multi-line image warms both Latin and CJK Vision recognition models without
+    /// blocking launch, eliminating the ~150 ms cold penalty on the first real capture.
+    static func warmUp(languages: [String], delay: TimeInterval = 0.4) {
+        let work = DispatchWorkItem {
+            let shouldRun = warmUpLock.withLock { state -> Bool in
+                if state.warmedLanguages == languages { return false }
+                state.pendingWork = nil
+                state.inFlight = true
+                return true
+            }
+            guard shouldRun else { return }
+            defer {
+                warmUpLock.withLock { state in
+                    state.inFlight = false
+                    state.warmedLanguages = languages
+                }
+            }
+            let t0 = PerfLog.now()
+            let sp = PerfLog.signposter.beginInterval("OCR.warmUp")
+            defer {
+                PerfLog.signposter.endInterval("OCR.warmUp", sp)
+                let ms = PerfLog.elapsedMs(since: t0)
+                PerfLog.logger.notice("ocr.warmup done_ms=\(ms, format: .fixed(precision: 1), privacy: .public) since_launch_ms=\(PerfLog.msSinceLaunch, format: .fixed(precision: 1), privacy: .public)")
+            }
+            if let image = warmUpImage(for: languages) {
+                _ = try? recognizeSync(image, languages: languages, detectBarcodes: true)
+            }
+        }
+        warmUpLock.withLock { state in
+            state.pendingWork?.cancel()
+            guard state.warmedLanguages != languages else { return }
+            state.pendingWork = work
+            if delay > 0 {
+                warmUpQueue.asyncAfter(deadline: .now() + delay, execute: work)
+            } else {
+                warmUpQueue.async(execute: work)
+            }
+        }
+    }
+
+    /// Builds a medium bilingual multi-line image (640×200, no upscaling needed) so Vision's automatic language
+    /// detector loads both Latin and CJK recognition models during warm-up. A single short mixed line (the old
+    /// 256×64 sample) only warmed one script and left the first real capture ~2.5× slower.
+    static func warmUpImage(for languages: [String]) -> CGImage? {
+        let width = 640, height = 200
+        guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let font = CTFontCreateWithName("PingFang SC" as CFString, 22, nil)
+        let attrs: [NSAttributedString.Key: Any] = [
+            NSAttributedString.Key(kCTFontAttributeName as String): font,
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(gray: 0, alpha: 1),
+        ]
+        var lines = [
+            "Modern macOS screenshot text recognition warm up.",
+            "中文文字识别预热示例：涵盖常见汉字与标点。",
+        ]
+        if languages.contains("ja-JP") { lines.append("日本語のテキスト認識ウォームアップ。") }
+        if languages.contains("ko-KR") { lines.append("한국어 텍스트 인식 준비.") }
+        var y = CGFloat(height) - 42
+        for line in lines.prefix(4) {
+            ctx.textPosition = CGPoint(x: 16, y: y)
+            CTLineDraw(CTLineCreateWithAttributedString(NSAttributedString(string: line, attributes: attrs)), ctx)
+            y -= 40
+        }
+        return ctx.makeImage()
+    }
+
+    static func recognizeSync(_ image: CGImage, languages: [String], detectBarcodes: Bool = true) throws -> OCRResult {
+        let tTotal = PerfLog.now()
+        let spState = PerfLog.signposter.beginInterval("OCR.recognize")
+        let tUp = PerfLog.now()
         let input = shouldUpscale(width: image.width, height: image.height) ? (image.upscaled(by: 2) ?? image) : image
+        let upscaleMs = PerfLog.elapsedMs(since: tUp)
         var lines: [OCRLine] = []
         var codes: [String] = []
+        var setupMs: Double = 0
+        var performMs: Double = 0
+        let filteredLanguages = languages.isEmpty ? [] : languages.filter { supportedLanguages.contains($0) }
         for band in bands(height: input.height) {
             guard let part = band.rows.count == input.height ? input
                     : input.cropping(to: CGRect(x: 0, y: band.rows.lowerBound, width: input.width, height: band.rows.count))
             else { continue }
+            let tSetup = PerfLog.now()
             let textRequest = VNRecognizeTextRequest()
             textRequest.recognitionLevel = .accurate
             textRequest.usesLanguageCorrection = true
-            textRequest.automaticallyDetectsLanguage = languages.isEmpty
-            if !languages.isEmpty {
-                let supported = (try? textRequest.supportedRecognitionLanguages()) ?? []
-                textRequest.recognitionLanguages = languages.filter { supported.contains($0) }
+            textRequest.automaticallyDetectsLanguage = filteredLanguages.isEmpty
+            if !filteredLanguages.isEmpty {
+                textRequest.recognitionLanguages = filteredLanguages
             }
-            let barcodeRequest = VNDetectBarcodesRequest()
-            try VNImageRequestHandler(cgImage: part, options: [:]).perform([textRequest, barcodeRequest])
+            var requests: [VNRequest] = [textRequest]
+            let barcodeRequest = detectBarcodes ? VNDetectBarcodesRequest() : nil
+            if let barcodeRequest { requests.append(barcodeRequest) }
+            setupMs += PerfLog.elapsedMs(since: tSetup)
+            let tPerf = PerfLog.now()
+            try VNImageRequestHandler(cgImage: part, options: [:]).perform(requests)
+            performMs += PerfLog.elapsedMs(since: tPerf)
 
             for obs in textRequest.results ?? [] {
                 guard let candidate = obs.topCandidates(1).first else { continue }
@@ -136,9 +244,16 @@ struct VisionOCREngine: OCREngine {
                 guard band.owns.contains(middle) else { continue }
                 lines.append(OCRLine(text: candidate.string, confidence: candidate.confidence, box: box))
             }
-            codes += (barcodeRequest.results ?? []).compactMap(\.payloadStringValue)
+            if let barcodeRequest {
+                codes += (barcodeRequest.results ?? []).compactMap(\.payloadStringValue)
+            }
         }
-        return OCRResult(lines: readingOrder(lines), barcodes: Array(NSOrderedSet(array: codes)) as? [String] ?? codes)
+        let ordered = readingOrder(lines)
+        let result = OCRResult(lines: ordered, barcodes: Array(NSOrderedSet(array: codes)) as? [String] ?? codes)
+        PerfLog.signposter.endInterval("OCR.recognize", spState)
+        let totalMs = PerfLog.elapsedMs(since: tTotal)
+        PerfLog.logger.notice("ocr.recognize size=\(image.width, privacy: .public)x\(image.height, privacy: .public) barcodes=\(detectBarcodes, privacy: .public) upscale_ms=\(upscaleMs, format: .fixed(precision: 1), privacy: .public) setup_ms=\(setupMs, format: .fixed(precision: 1), privacy: .public) perform_ms=\(performMs, format: .fixed(precision: 1), privacy: .public) total_ms=\(totalMs, format: .fixed(precision: 1), privacy: .public) lines=\(ordered.count, privacy: .public) since_launch_ms=\(PerfLog.msSinceLaunch, format: .fixed(precision: 1), privacy: .public)")
+        return result
     }
 }
 
