@@ -11,6 +11,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     private var statusItem: NSStatusItem!
 
     func start() {
+        let tStart = PerfLog.now()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         refreshStatusIcon()
         let menu = NSMenu()
@@ -20,11 +21,22 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         NSApp.mainMenu = makeMainMenu()
         Keychain.migrateLegacyLLMKey(to: Settings.shared.llm.baseURL)
         registerHotKeys()
-        VisionOCREngine.warmUp(languages: Settings.shared.ocrLanguages)
+        SelectionTranslateController.shared.start()
+        VisionOCREngine.warmUp(languages: Settings.shared.ocrLanguages, delay: 0.4)
         TranslatePanel.prepare()
+        if Settings.shared.appleTranslateEnabled {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                AppleTranslationService.warmUp(primary: Settings.shared.primaryLanguage,
+                                               secondary: Settings.shared.secondaryLanguage)
+            }
+        }
         // The first ScreenCaptureKit call of a session is slow; pay for it now rather than on the first hotkey.
         if ScreenCapturer.hasPermission {
-            Task { _ = try? await SCScreenshotManager.captureImage(in: CGRect(x: 0, y: 0, width: 2, height: 2)) }
+            Task {
+                let tSCK = PerfLog.now()
+                _ = try? await SCScreenshotManager.captureImage(in: CGRect(x: 0, y: 0, width: 2, height: 2))
+                PerfLog.logger.notice("app.sck_warmup ms=\(PerfLog.elapsedMs(since: tSCK), format: .fixed(precision: 1), privacy: .public) since_launch_ms=\(PerfLog.msSinceLaunch, format: .fixed(precision: 1), privacy: .public)")
+            }
         }
         NotificationCenter.default.addObserver(forName: .hotKeysChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.registerHotKeys() }
@@ -36,6 +48,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
             defaults.removeObject(forKey: Permission.flowPendingKey)
             OnboardingWindow.show()
         }
+        PerfLog.logger.notice("app.start sync_ms=\(PerfLog.elapsedMs(since: tStart), format: .fixed(precision: 1), privacy: .public)")
     }
 
     // MARK: - Status icon
@@ -114,7 +127,9 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                 item.keyEquivalentModifierMask = hk.modifierFlags
             }
             // Accessibility is optional, so no dot on the icon; the one item that needs it says so.
-            if action == .translateSelection, Permission.accessibility.status == .missing {
+            if failedHotKeys.contains(action) {
+                item.subtitle = L("menu.shortcutConflict")
+            } else if action == .translateSelection, Permission.accessibility.status == .missing {
                 item.subtitle = L("menu.needsAccessibility")
             }
             menu.addItem(item)
@@ -217,7 +232,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     @objc private func showAbout() {
-        NSApp.activate()
+        WindowPresentation.activateApp()
         NSApp.orderFrontStandardAboutPanel(nil)
     }
 
@@ -231,6 +246,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         guard !isPreparingCapture, !CaptureSession.isActive, !ScrollCapture.isActive, !ScreenRecording.isActive else { return }
         guard ScreenCapturer.canCapture else { OnboardingWindow.show(); return }
         // Keep our own transient windows out of the frozen screen.
+        SelectionTranslateController.shared.dismissAll()
         TranslatePanel.dismissUnpinned()
         CapturePreview.close(animated: false)
         isPreparingCapture = true
@@ -257,10 +273,15 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         }
     }
 
+    private var isCountingDown = false
+
     /// Counts down so menus, hover states and tooltips can be opened before the screen freezes.
     @objc func delayedCapture() {
+        guard !isCountingDown, !isPreparingCapture, !CaptureSession.isActive, !ScrollCapture.isActive, !ScreenRecording.isActive else { return }
         guard ScreenCapturer.canCapture else { OnboardingWindow.show(); return }
+        isCountingDown = true
         Task { @MainActor in
+            defer { isCountingDown = false }
             for n in stride(from: 3, through: 1, by: -1) {
                 Feedback.toast(L("toast.countdown", n), symbol: "timer")
                 try? await Task.sleep(for: .seconds(1))
@@ -415,12 +436,22 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
 
     // MARK: - Translate
 
+    private var translateOCRTask: Task<Void, Never>?
+
     /// `anchor`: the captured area in AppKit global coordinates; the panel opens next to it.
     func translate(image: CGImage, historyID: UUID? = nil, near anchor: CGRect? = nil) {
+        translateOCRTask?.cancel()
+        let t0 = PerfLog.now()
+        TranslatePanel.onCancelRecognizing = { [weak self] in
+            self?.translateOCRTask?.cancel()
+            self?.translateOCRTask = nil
+        }
         TranslatePanel.showRecognizing(near: anchor)
-        Task { @MainActor in
+        let panelShowMs = PerfLog.elapsedMs(since: t0)
+        translateOCRTask = Task { @MainActor [weak self] in
             do {
-                let result = try await OCRService.recognize(image, languages: Settings.shared.ocrLanguages)
+                let result = try await OCRService.recognize(image, languages: Settings.shared.ocrLanguages, detectBarcodes: false)
+                guard !Task.isCancelled else { return }
                 let text = result.text(keepLineBreaks: false)
                 guard !text.isEmpty else {
                     TranslatePanel.cancelRecognizing()
@@ -428,10 +459,14 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
                     return
                 }
                 if let historyID { HistoryStore.shared.setText(text, for: historyID) }
+                PerfLog.logger.notice("translate.ocr_done panel_show_ms=\(panelShowMs, format: .fixed(precision: 1), privacy: .public) ocr_total_ms=\(PerfLog.elapsedMs(since: t0), format: .fixed(precision: 1), privacy: .public) chars=\(text.count, privacy: .public)")
                 TranslatePanel.show(text: text, near: anchor)
+                self?.translateOCRTask = nil
             } catch {
+                guard !Task.isCancelled else { return }
                 TranslatePanel.cancelRecognizing()
                 Feedback.error(error)
+                self?.translateOCRTask = nil
             }
         }
     }
@@ -439,10 +474,13 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
     func translateSelection() {
         SelectionReader.log.info("translate selection: trusted=\(SelectionReader.isTrusted, privacy: .public)")
         guard SelectionReader.isTrusted else {
-            Permission.accessibility.request()
-            Feedback.toast(L("toast.selectionNeedsAccessibility"), symbol: "exclamationmark.triangle.fill")
+            Feedback.offer(L("toast.selectionNeedsAccessibility"), symbol: "exclamationmark.triangle.fill",
+                           action: L("common.turnOn")) {
+                MainActor.assumeIsolated { Permission.accessibility.request() }
+            }
             return
         }
+        SelectionTranslateController.shared.dismissAll()
         let mouse = NSEvent.mouseLocation
         Task { @MainActor in
             let text = await SelectionReader.selectedText()
@@ -477,7 +515,7 @@ final class AppController: NSObject, ObservableObject, NSMenuDelegate {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = true
-        NSApp.activate()
+        WindowPresentation.activateApp()
         panel.begin { response in
             guard response == .OK else { return }
             for url in panel.urls {

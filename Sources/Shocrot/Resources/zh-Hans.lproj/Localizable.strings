@@ -34,6 +34,7 @@
 "menu.grantScreenRecording.subtitle" = "截图、识别文字和翻译都需要它";
 "menu.delayedCapture" = "3 秒后区域截图";
 "menu.needsAccessibility" = "需要开启“辅助功能”权限";
+"menu.shortcutConflict" = "快捷键冲突，请在设置中修改";
 "menu.recognizeClipboard" = "识别剪贴板图片中的文字";
 "menu.recognizeFile" = "识别图片文件中的文字…";
 "menu.history" = "历史记录…";
@@ -262,6 +263,7 @@
 
 "settings.translate.primary" = "首选语言";
 "settings.translate.secondary" = "第二语言";
+"settings.translate.selectionIcon" = "划词后显示翻译图标";
 "settings.translate.languagesFooter" = "首选语言的文字译为第二语言，其他语言一律译为首选语言。";
 "settings.translate.enableApple" = "启用 Apple 翻译（离线，免费）";
 "settings.translate.manageLanguages" = "管理离线语言…";
@@ -336,6 +338,8 @@
 "translate.collapse" = "收起";
 "translate.expand" = "展开";
 "translate.openInDictionary" = "在“词典”中打开";
+"selection.iconHelp" = "翻译选中文字";
+"selection.expand" = "在完整翻译面板中打开";
 
 /* MARK: Translation services */
 "service.apple" = "Apple 翻译";

@@ -34,6 +34,7 @@
 "menu.grantScreenRecording.subtitle" = "Needed for screenshots, text recognition and translation";
 "menu.delayedCapture" = "Capture Area in 3 Seconds";
 "menu.needsAccessibility" = "Requires Accessibility permission";
+"menu.shortcutConflict" = "Shortcut conflict — change in Settings";
 "menu.recognizeClipboard" = "Recognize Text in Clipboard Image";
 "menu.recognizeFile" = "Recognize Text in Image File…";
 "menu.history" = "History…";
@@ -264,6 +265,7 @@
 
 "settings.translate.primary" = "Primary language";
 "settings.translate.secondary" = "Secondary language";
+"settings.translate.selectionIcon" = "Show translate icon after selecting text";
 "settings.translate.languagesFooter" = "Text in the primary language is translated into the secondary language; everything else is translated into the primary language.";
 "settings.translate.enableApple" = "Enable Apple Translate (offline, free)";
 "settings.translate.manageLanguages" = "Manage Offline Languages…";
@@ -341,6 +343,8 @@
 "translate.collapse" = "Collapse";
 "translate.expand" = "Expand";
 "translate.openInDictionary" = "Open in Dictionary";
+"selection.iconHelp" = "Translate Selection";
+"selection.expand" = "Open in Translation Panel";
 
 /* MARK: Translation services */
 "service.apple" = "Apple Translate";

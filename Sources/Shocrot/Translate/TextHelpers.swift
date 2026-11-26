@@ -62,67 +62,20 @@ final class Speaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate, @u
     }
 }
 
-/// Reads the text selected in the frontmost app: Accessibility first, then a simulated ⌘C as fallback.
+/// Reads the text selected in the frontmost app strictly through the Accessibility API (no ⌘C / clipboard touch).
 enum SelectionReader {
-    static var isTrusted: Bool { AXIsProcessTrusted() }
+    static var isTrusted: Bool { AXSelectionReader.isTrusted }
 
-    static let log = Logger(subsystem: "com.weaveneuron.shocrot", category: "selection")
+    static let log = AXSelectionReader.log
 
     static func selectedText() async -> String? {
-        let app = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?"
-        if let text = viaAccessibility(), !text.isEmpty {
-            log.info("selection via AX from \(app, privacy: .public): \(text.count) chars")
-            return text
-        }
-        let copied = await viaCopy()
-        log.info("selection via ⌘C from \(app, privacy: .public): \(copied?.count ?? -1) chars")
-        return copied
-    }
-
-    private static func viaAccessibility() -> String? {
-        // Ask the frontmost app directly: the system-wide focus query fails on recent macOS.
-        guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
-        var focused: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXFocusedUIElementAttribute as CFString,
-                                            &focused) == .success,
-              let element = focused else { return nil }
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element as! AXUIElement, kAXSelectedTextAttribute as CFString, &value) == .success
-        else { return nil }
-        return (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// Sends ⌘C, reads the result, then restores the user's clipboard.
-    private static func viaCopy() async -> String? {
-        let pb = NSPasteboard.general
-        let saved = pb.pasteboardItems?.map { item in
-            item.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { $0[$1] = item.data(forType: $1) }
-        } ?? []
-        let before = pb.changeCount
-
-        // The hotkey's ⌥/⇧/⌃ may still be held; apps would then see ⌥⇧⌘C and copy nothing.
-        let held: CGEventFlags = [.maskAlternate, .maskShift, .maskControl]
-        for _ in 0..<20 where !CGEventSource.flagsState(.hidSystemState).intersection(held).isEmpty {
-            try? await Task.sleep(for: .milliseconds(25))
-        }
-        // A private source keeps any still-held modifiers out of the synthetic keystroke.
-        let source = CGEventSource(stateID: .privateState)
-        for down in [true, false] {
-            let event = CGEvent(keyboardEventSource: source, virtualKey: 0x08, keyDown: down) // C
-            event?.flags = .maskCommand
-            event?.post(tap: .cghidEventTap)
-        }
-        // Browsers and Electron apps can take a few hundred ms to fill the pasteboard.
-        for _ in 0..<32 where pb.changeCount == before { try? await Task.sleep(for: .milliseconds(25)) }
-        guard pb.changeCount != before else { return nil }
-        let text = pb.string(forType: .string)
-
-        pb.clearContents()
-        pb.writeObjects(saved.map { types in
-            let item = NSPasteboardItem()
-            types.forEach { item.setData($1, forType: $0) }
-            return item
-        })
-        return text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let front = NSWorkspace.shared.frontmostApplication else { return nil }
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let snapshot = await AXSelectionReader.readSelection(pid: front.processIdentifier,
+                                                             atAppKitPoint: NSEvent.mouseLocation,
+                                                             primaryScreenHeight: primaryHeight)
+        let app = front.bundleIdentifier ?? "?"
+        log.info("selection via AX from \(app, privacy: .public): \(snapshot?.text.count ?? 0) chars")
+        return snapshot?.text
     }
 }

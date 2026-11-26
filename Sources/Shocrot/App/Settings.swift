@@ -196,6 +196,8 @@ final class Settings: ObservableObject {
     @Published var secondaryLanguage: String { didSet { d.set(secondaryLanguage, forKey: "secondaryLanguage") } }
     @Published var appleTranslateEnabled: Bool { didSet { d.set(appleTranslateEnabled, forKey: "appleTranslateEnabled") } }
     @Published var googleTranslateEnabled: Bool { didSet { d.set(googleTranslateEnabled, forKey: "googleTranslateEnabled") } }
+    /// Shows a small floating translate icon at the mouse-up point after selecting text in any app.
+    @Published var selectionTranslateEnabled: Bool { didSet { d.set(selectionTranslateEnabled, forKey: "selectionTranslateEnabled") } }
     @Published var llm: LLMConfig { didSet { d.set(try? JSONEncoder().encode(llm), forKey: "llm") } }
     /// UI language; applies from the next launch (see `L10n`).
     @Published var appLanguage: AppLanguage { didSet { AppLanguage.store(appLanguage, in: d) } }
@@ -292,6 +294,7 @@ final class Settings: ObservableObject {
         (primaryLanguage, secondaryLanguage) = Self.translationLanguages(in: d, systemPreferred: Self.systemPreferredLanguages)
         appleTranslateEnabled = d.object(forKey: "appleTranslateEnabled") as? Bool ?? true
         googleTranslateEnabled = d.bool(forKey: "googleTranslateEnabled")  // off: text would leave the Mac
+        selectionTranslateEnabled = d.object(forKey: "selectionTranslateEnabled") as? Bool ?? true
         llm = d.data(forKey: "llm").flatMap { try? JSONDecoder().decode(LLMConfig.self, from: $0) } ?? LLMConfig()
         appLanguage = AppLanguage.stored(in: d)
         launchAtLogin = Self.launchesAtLogin(SMAppService.mainApp.status)
